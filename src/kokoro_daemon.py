@@ -6,6 +6,7 @@ Protocol over a unix socket, one message per request:
     STOP
 Exits after IDLE_TIMEOUT seconds with no requests.
 """
+import json
 import os
 import queue
 import re
@@ -19,6 +20,7 @@ warnings.filterwarnings("ignore")
 
 SOCKET = "/tmp/kokoro-tts.sock"
 SPEAKING_FLAG = "/tmp/kokoro-speaking"
+LEXICON = os.path.expanduser("~/.config/kokoro-lexicon.json")
 IDLE_TIMEOUT = float(os.environ.get("KOKORO_IDLE_TIMEOUT", 10800))
 SR = 24000
 TIMING = bool(os.environ.get("KOKORO_TIMING"))
@@ -64,6 +66,42 @@ def trim(audio):
     return audio[max(0, loud[0] - margin):min(len(audio), loud[-1] + margin)]
 
 
+_lexicon = {"mtime": None, "data": {}}
+
+
+def user_lexicon():
+    """Pronunciation overrides, reloaded whenever the file changes.
+
+    misaki ships some wrong entries (e.g. "imagines" as the Latin plural
+    "-ineez"), and they are stored as golds so nothing else overrides them.
+    A bad JSON edit keeps the last good copy rather than breaking speech.
+    """
+    try:
+        mtime = os.path.getmtime(LEXICON)
+    except OSError:
+        return _lexicon["data"]
+    if _lexicon["mtime"] != mtime:
+        try:
+            with open(LEXICON) as fh:
+                loaded = json.load(fh)
+            _lexicon["data"] = {k: v for k, v in loaded.items()
+                                if not k.startswith("_")}
+            _lexicon["mtime"] = mtime
+        except (OSError, ValueError) as exc:
+            sys.stderr.write(f"lexicon ignored ({exc})\n")
+            sys.stderr.flush()
+    return _lexicon["data"]
+
+
+def apply_lexicon(pipeline):
+    golds = pipeline.g2p.lexicon.golds
+    for word, phonemes in user_lexicon().items():
+        # misaki looks up case variants separately, so a sentence-initial
+        # capital would otherwise still hit the entry we are overriding.
+        for variant in {word, word.lower(), word.capitalize(), word.upper()}:
+            golds[variant] = phonemes
+
+
 pipelines = {}
 state_lock = threading.Lock()
 generation = 0
@@ -107,6 +145,7 @@ def speak(voice, speed, text):
     if not chunks:
         return
     pipeline = get_pipeline(voice[0])
+    apply_lexicon(pipeline)
     audio_q = queue.Queue(maxsize=4)
 
     def produce():

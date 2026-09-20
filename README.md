@@ -48,6 +48,37 @@ speak-kokoro --voices             # list all 54 voices
 Voice and speed live in `~/.config/kokoro-tts.conf` and are read fresh on every
 press, so changes take effect without restarting anything.
 
+## Fixing a mispronounced word
+
+misaki, the grapheme-to-phoneme layer Kokoro uses, ships a handful of wrong
+entries. "imagines" is one: it is stored as the Latin plural, so it comes out
+"im-ah-ji-neez". These live in misaki's gold dictionary, so nothing downstream
+overrides them.
+
+Add a correction to `~/.config/kokoro-lexicon.json`:
+
+```json
+{
+  "imagines": "ɪmˈæʤənz"
+}
+```
+
+The daemon reloads the file on save, so the next press uses it. Case variants
+are handled, which matters because misaki looks up a sentence-initial capital
+separately. Malformed JSON is ignored in favour of the last good version rather
+than breaking speech.
+
+The quickest way to find the right phonemes is to print what a similar word
+already produces and adapt it:
+
+```bash
+~/.local/share/kokoro-venv/bin/python -c "
+from kokoro import KPipeline
+g = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M').g2p
+for w in ['imagine', 'engines']: print(w, g(w)[0])
+"
+```
+
 ## How it is put together
 
 Three pieces, split by how much memory they need to hold.

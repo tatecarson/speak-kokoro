@@ -22,6 +22,10 @@ mkdir -p "$HOME/.local/bin" "$HOME/.config"
 install -m 755 "$SRC/bin/speak-kokoro" "$HOME/.local/bin/speak-kokoro"
 install -m 644 "$SRC/src/kokoro_daemon.py" "$SRC/src/kokoro_menubar.py" "$VENV/"
 
+if [ ! -f "$HOME/.config/kokoro-lexicon.json" ]; then
+  install -m 644 "$SRC/config/kokoro-lexicon.json" "$HOME/.config/kokoro-lexicon.json"
+fi
+
 if [ ! -f "$HOME/.config/kokoro-tts.conf" ]; then
   printf '# Voice and speed for speak-kokoro. Managed by the menu bar app.\nVOICE=af_heart\nSPEED=1.0\n' \
     > "$HOME/.config/kokoro-tts.conf"

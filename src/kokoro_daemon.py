@@ -106,6 +106,78 @@ def apply_lexicon(pipeline):
             golds[variant] = phonemes
 
 
+_stream = None
+_stream_device = None
+_stream_lock = threading.Lock()
+
+
+def default_output():
+    """Name of the current default output device, or None if unknown.
+
+    Deliberately does NOT call sd._terminate()/_initialize() to refresh
+    PortAudio's device cache: that invalidates every open stream, including
+    the one we are about to write to.
+    """
+    try:
+        return sd.query_devices(kind="output")["name"]
+    except Exception:
+        return None
+
+
+def reset_stream():
+    """Drop the shared stream so the next use reopens on the current device."""
+    global _stream, _stream_device
+    with _stream_lock:
+        if _stream is not None:
+            try:
+                _stream.stop()
+                _stream.close()
+            except Exception:
+                pass
+        _stream = None
+        _stream_device = None
+
+
+def get_stream():
+    """One output stream, reopened only when the output device changes.
+
+    Opening and closing a CoreAudio device produces an audible pop, so cycling
+    it per utterance made every sentence end with a click. While nothing is
+    written the stream simply underflows, which is silent and harmless.
+
+    A stream stays bound to the device it opened on, so plugging in headphones
+    would otherwise keep sending audio to the speakers.
+    """
+    global _stream, _stream_device
+    with _stream_lock:
+        device = default_output()
+        if _stream is not None and device != _stream_device:
+            try:
+                _stream.stop()
+                _stream.close()
+            except Exception:
+                pass
+            _stream = None
+        if _stream is None:
+            _stream = sd.OutputStream(samplerate=SR, channels=1,
+                                      dtype="float32")
+            _stream.start()
+            _stream_device = device
+        return _stream
+
+
+def fade(audio, ms=5):
+    """Ramp the edges so a chunk never starts or ends on a step."""
+    n = min(int(ms * SR / 1000), len(audio) // 2)
+    if n <= 0:
+        return audio
+    audio = audio.copy()
+    ramp = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    audio[:n] *= ramp
+    audio[-n:] *= ramp[::-1]
+    return audio
+
+
 pipelines = {}
 state_lock = threading.Lock()
 generation = 0
@@ -162,14 +234,13 @@ def speak(voice, speed, text):
                     pause = PAUSE.get(chunk.strip()[-1:], DEFAULT_PAUSE)
                     if i == len(chunks) - 1:
                         pause = 0.0
-                    audio_q.put((trim(audio), pause))
+                    audio_q.put((fade(trim(audio)), pause))
         finally:
             audio_q.put(None)
 
     threading.Thread(target=produce, daemon=True).start()
 
-    stream = sd.OutputStream(samplerate=SR, channels=1, dtype="float32")
-    stream.start()
+    stream = get_stream()
     open(SPEAKING_FLAG, "w").close()      # menu bar reads this for its icon
     first = True
     try:
@@ -187,13 +258,16 @@ def speak(voice, speed, text):
             for off in range(0, len(audio), step):
                 if current_generation() != gen:
                     return
-                stream.write(audio[off:off + step].reshape(-1, 1))
+                block = audio[off:off + step].reshape(-1, 1)
+                try:
+                    stream.write(block)
+                except sd.PortAudioError:
+                    # The device went away, e.g. headphones unplugged.
+                    # Reopen on whatever is current and keep going.
+                    reset_stream()
+                    stream = get_stream()
+                    stream.write(block)
     finally:
-        if current_generation() == gen:
-            stream.stop()
-        else:
-            stream.abort()
-        stream.close()
         if current_generation() == gen:
             try:
                 os.unlink(SPEAKING_FLAG)
@@ -243,6 +317,14 @@ def single_instance():
 
 
 def cleanup():
+    global _stream
+    if _stream is not None:
+        try:
+            _stream.stop()
+            _stream.close()
+        except Exception:
+            pass
+        _stream = None
     for path in (SOCKET, SPEAKING_FLAG):
         try:
             os.unlink(path)

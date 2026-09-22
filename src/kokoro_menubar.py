@@ -141,11 +141,12 @@ class KokoroApp(rumps.App):
         speed_items = [rumps.MenuItem(s, callback=self.pick_speed) for s in SPEEDS]
 
         speak_sel = show_shortcut(
-            rumps.MenuItem("Speak Selection", callback=self.explain_hotkey),
+            rumps.MenuItem("Select text anywhere, then press"),
             "Speak with Kokoro")
         stop_sel = show_shortcut(
             rumps.MenuItem("Stop Speaking", callback=self.stop),
             "Stop Kokoro Speech")
+        speak_sel._menuitem.setEnabled_(False)
 
         self.menu = [
             speak_sel,
@@ -193,16 +194,11 @@ class KokoroApp(rumps.App):
     def speak_clipboard(self, _):
         text = clipboard_text().strip()
         if not text:
-            rumps.notification("Kokoro", "Nothing to speak",
-                               "The clipboard is empty.")
+            # rumps.notification is silently dropped for an unbundled app;
+            # NSAlert works regardless of bundle identity.
+            rumps.alert("Nothing to speak", "The clipboard is empty.")
             return
         threading.Thread(target=self.say, args=(text,), daemon=True).start()
-
-    def explain_hotkey(self, _):
-        rumps.notification(
-            "Kokoro", "Speak Selection",
-            "Select text in any app, then press \u2303\u2325S. "
-            "Or use Speak Clipboard from this menu.")
 
     def stop(self, _):
         subprocess.run([SPEAK, "--stop"])

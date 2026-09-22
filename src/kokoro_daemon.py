@@ -6,10 +6,13 @@ Protocol over a unix socket, one message per request:
     STOP
 Exits after IDLE_TIMEOUT seconds with no requests.
 """
+import atexit
+import fcntl
 import json
 import os
 import queue
 import re
+import signal
 import socket
 import sys
 import threading
@@ -21,6 +24,7 @@ warnings.filterwarnings("ignore")
 SOCKET = "/tmp/kokoro-tts.sock"
 SPEAKING_FLAG = "/tmp/kokoro-speaking"
 LEXICON = os.path.expanduser("~/.config/kokoro-lexicon.json")
+LOCKFILE = "/tmp/kokoro-daemon.lock"
 IDLE_TIMEOUT = float(os.environ.get("KOKORO_IDLE_TIMEOUT", 10800))
 SR = 24000
 TIMING = bool(os.environ.get("KOKORO_TIMING"))
@@ -218,14 +222,39 @@ def reaper():
     while True:
         time.sleep(60)
         if time.time() - last_used > IDLE_TIMEOUT:
-            try:
-                os.unlink(SOCKET)
-            except OSError:
-                pass
+            cleanup()
             os._exit(0)
 
 
+def single_instance():
+    """Refuse to start if another daemon holds the lock.
+
+    Without this, a second daemon would unlink the first one's socket, bind its
+    own, and leave two copies of a 1.5 GB model resident with the first
+    orphaned. flock is released by the kernel on death, so there is no stale
+    lock to clear even after a force quit.
+    """
+    lock = open(LOCKFILE, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit("kokoro daemon already running")
+    return lock
+
+
+def cleanup():
+    for path in (SOCKET, SPEAKING_FLAG):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def main():
+    lock = single_instance()          # noqa: F841  (held for process lifetime)
+    atexit.register(cleanup)
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, lambda *_: (cleanup(), os._exit(0)))
     if os.path.exists(SOCKET):
         os.unlink(SOCKET)
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

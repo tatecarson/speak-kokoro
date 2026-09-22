@@ -7,6 +7,7 @@
 #   VOICE=am_michael SPEED=1.15 speak-kokoro "hello"
 #   speak-kokoro --stop        # stop playback
 #   speak-kokoro --quit        # shut the daemon down, freeing its memory
+#   speak-kokoro --voices      # list available voices
 
 PY="$HOME/.local/share/kokoro-venv/bin/python"
 DAEMON="$HOME/.local/share/kokoro-venv/kokoro_daemon.py"
@@ -18,37 +19,54 @@ VOICE="${VOICE:-af_heart}"
 SPEED="${SPEED:-1.0}"
 export PATH="/opt/homebrew/bin:$PATH"
 
-send() {  # send stdin to the daemon
+# Send stdin to the daemon. Exits non-zero if nothing is listening, which is
+# how a socket left behind by a killed daemon gets detected.
+send() {
   "$PY" -c '
 import socket, sys
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect(sys.argv[1])
+s.settimeout(10)
+try:
+    s.connect(sys.argv[1])
+except OSError:
+    sys.exit(1)
 s.sendall(sys.stdin.buffer.read())
 s.shutdown(socket.SHUT_WR)
-' "$SOCK"
+' "$SOCK" 2>/dev/null
 }
 
 case "$1" in
-  --quit) pkill -f kokoro_daemon.py; rm -f "$SOCK"; exit 0 ;;
+  --quit)
+    pkill -f kokoro_daemon.py
+    rm -f "$SOCK" /tmp/kokoro-speaking
+    exit 0 ;;
+  --stop)
+    printf 'STOP' | send
+    exit 0 ;;
   --voices)
     "$PY" -c "
 from huggingface_hub import list_repo_files
 for f in sorted(list_repo_files('hexgrad/Kokoro-82M')):
     if f.startswith('voices/'): print(f.split('/')[-1][:-3])
-" 2>/dev/null; exit 0 ;;
-  --stop) [ -S "$SOCK" ] && printf 'STOP' | send; exit 0 ;;
+" 2>/dev/null
+    exit 0 ;;
 esac
 
 if [ -n "$1" ]; then TEXT="$1"; else TEXT=$(cat); fi
 [ -z "${TEXT//[[:space:]]/}" ] && exit 0
 
-# Start the daemon if it is not listening yet.
-if [ ! -S "$SOCK" ]; then
-  VOICE="$VOICE" nohup "$PY" "$DAEMON" >>"$LOG" 2>&1 &
-  for _ in $(seq 1 120); do
-    [ -S "$SOCK" ] && break
-    sleep 0.5
-  done
+speak() { printf 'SAY %s %s %s' "$VOICE" "$SPEED" "$TEXT" | send; }
+
+# Fast path: a live daemon answers immediately.
+if [ -S "$SOCK" ] && speak; then
+  exit 0
 fi
 
-printf 'SAY %s %s %s' "$VOICE" "$SPEED" "$TEXT" | send
+# Otherwise the socket is missing or stale (daemon killed without cleanup).
+rm -f "$SOCK" /tmp/kokoro-speaking
+VOICE="$VOICE" nohup "$PY" "$DAEMON" >>"$LOG" 2>&1 &
+for _ in $(seq 1 120); do
+  [ -S "$SOCK" ] && break
+  sleep 0.5
+done
+speak

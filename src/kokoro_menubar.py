@@ -128,6 +128,7 @@ class KokoroApp(rumps.App):
     def __init__(self):
         super().__init__("Kokoro", title=IDLE, quit_button=None)
         self.cfg = read_conf()
+        self.loading = False
         self.status = rumps.MenuItem("Model: checking…", callback=None)
         self.build_menu()
         threading.Thread(target=self.watch, daemon=True).start()
@@ -207,10 +208,26 @@ class KokoroApp(rumps.App):
         subprocess.run([SPEAK, "--stop"])
 
     def unload(self, _):
+        if self.loading:
+            return
         subprocess.run([SPEAK, "--quit"])
 
     def preload(self, _):
-        threading.Thread(target=self.say, args=("Ready.",), daemon=True).start()
+        # Loading takes ~5 s, far longer than the 1 s state poll, so disable the
+        # item here rather than waiting for the watcher to notice.
+        if self.loading or daemon_loaded():
+            return
+        self.loading = True
+        self.menu["Start Model"].set_callback(None)
+        self.status.title = "Model: loading…"
+
+        def run():
+            try:
+                self.say("Ready.")
+            finally:
+                self.loading = False
+
+        threading.Thread(target=run, daemon=True).start()
 
     def toggle_login(self, sender):
         if os.path.exists(AGENT):
@@ -230,10 +247,15 @@ class KokoroApp(rumps.App):
         while True:
             self.title = BUSY if speaking() else IDLE
             loaded = daemon_loaded()
-            self.status.title = ("Model: loaded (1.5 GB)" if loaded
-                                 else "Model: not loaded")
-            self.menu["Stop Model"].set_callback(self.unload if loaded else None)
-            self.menu["Start Model"].set_callback(None if loaded else self.preload)
+            if self.loading:
+                self.status.title = "Model: loading…"
+            else:
+                self.status.title = ("Model: loaded (1.5 GB)" if loaded
+                                     else "Model: not loaded")
+            busy = loaded or self.loading
+            self.menu["Stop Model"].set_callback(
+                self.unload if (loaded and not self.loading) else None)
+            self.menu["Start Model"].set_callback(None if busy else self.preload)
             time.sleep(1)
 
 

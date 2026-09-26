@@ -2,3 +2,4 @@ kokoro
 soundfile
 sounddevice
 rumps
+pyobjc-framework-ApplicationServices

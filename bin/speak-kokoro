@@ -6,6 +6,9 @@
 #   speak-kokoro "hello"
 #   VOICE=am_michael SPEED=1.15 speak-kokoro "hello"
 #   speak-kokoro --stop        # stop playback
+#   speak-kokoro --toggle      # pause or resume (replays the last text if idle)
+#   speak-kokoro --next        # skip to the next sentence
+#   speak-kokoro --prev        # back to the start of this or the previous sentence
 #   speak-kokoro --quit        # shut the daemon down, freeing its memory
 #   speak-kokoro --voices      # list available voices
 
@@ -42,6 +45,10 @@ case "$1" in
     exit 0 ;;
   --stop)
     printf 'STOP' | send
+    exit 0 ;;
+  --toggle|--next|--prev)
+    cmd="${1#--}"
+    printf '%s' "$(echo "$cmd" | tr '[:lower:]' '[:upper:]')" | send
     exit 0 ;;
   --voices)
     "$PY" -c "

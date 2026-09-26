@@ -5,6 +5,7 @@ Deliberately lightweight: it never imports torch, it only talks to the
 synthesis daemon over its unix socket. The heavy model stays on demand.
 """
 import fcntl
+import json
 import os
 import socket
 import subprocess
@@ -16,6 +17,9 @@ from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
 from AppKit import NSPasteboard, NSPasteboardTypeString
 from AppKit import (NSEventModifierFlagCommand, NSEventModifierFlagControl,
                     NSEventModifierFlagOption, NSEventModifierFlagShift)
+from PyObjCTools import AppHelper
+
+import kokoro_player
 
 SOCK = "/tmp/kokoro-tts.sock"
 CONF = os.path.expanduser("~/.config/kokoro-tts.conf")
@@ -87,7 +91,7 @@ def show_shortcut(item, service_name):
 
 
 def read_conf():
-    cfg = {"VOICE": "af_heart", "SPEED": "1.0"}
+    cfg = {"VOICE": "af_heart", "SPEED": "1.0", "CONTROLS": "1", "HIGHLIGHT": "1"}
     try:
         with open(CONF) as fh:
             for line in fh:
@@ -105,6 +109,18 @@ def write_conf(cfg):
     with open(CONF, "w") as fh:
         fh.write("# Voice and speed for speak-kokoro. Managed by the menu bar app.\n")
         fh.write(f"VOICE={cfg['VOICE']}\nSPEED={cfg['SPEED']}\n")
+        fh.write(f"CONTROLS={cfg['CONTROLS']}\nHIGHLIGHT={cfg['HIGHLIGHT']}\n")
+
+
+def send(cmd):
+    """Send a playback command straight to the daemon, if it is running."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            s.connect(SOCK)
+            s.sendall(cmd.encode())
+    except OSError:
+        pass
 
 
 def daemon_loaded():
@@ -130,8 +146,10 @@ class KokoroApp(rumps.App):
         self.cfg = read_conf()
         self.loading = False
         self.status = rumps.MenuItem("Model: checking…", callback=None)
+        self.player = kokoro_player.Player(send)
         self.build_menu()
         threading.Thread(target=self.watch, daemon=True).start()
+        threading.Thread(target=self.listen, daemon=True).start()
 
     def build_menu(self):
         voice_menu = []
@@ -155,6 +173,9 @@ class KokoroApp(rumps.App):
             None,
             [rumps.MenuItem("Voice"), voice_menu],
             [rumps.MenuItem("Speed"), speed_items],
+            rumps.MenuItem("Show Playback Controls", callback=self.toggle_controls),
+            rumps.MenuItem("Highlight Words in Document",
+                           callback=self.toggle_highlight),
             None,
             self.status,
             rumps.MenuItem("Start Model", callback=self.preload),
@@ -173,6 +194,12 @@ class KokoroApp(rumps.App):
         for item in self.menu["Speed"].values():
             item.state = item.title == self.cfg["SPEED"]
         self.menu["Start at Login"].state = os.path.exists(AGENT)
+        controls = self.cfg["CONTROLS"] == "1"
+        # Only claim highlighting is on once macOS actually allows it.
+        highlight = self.cfg["HIGHLIGHT"] == "1" and kokoro_player.ax_available()
+        self.menu["Show Playback Controls"].state = controls
+        self.menu["Highlight Words in Document"].state = highlight
+        self.player.set_options(controls, highlight)
 
     # --- actions -------------------------------------------------------
     def pick_voice(self, sender):
@@ -185,6 +212,26 @@ class KokoroApp(rumps.App):
 
     def pick_speed(self, sender):
         self.cfg["SPEED"] = sender.title
+        write_conf(self.cfg)
+        self.mark_checks()
+
+    def toggle_controls(self, sender):
+        self.cfg["CONTROLS"] = "0" if sender.state else "1"
+        write_conf(self.cfg)
+        self.mark_checks()
+
+    def toggle_highlight(self, sender):
+        if sender.state:
+            self.cfg["HIGHLIGHT"] = "0"
+        else:
+            self.cfg["HIGHLIGHT"] = "1"
+            if not kokoro_player.ax_available():
+                kokoro_player.ask_for_accessibility()
+                rumps.alert(
+                    "Accessibility permission needed",
+                    "Highlighting finds the words on screen through macOS "
+                    "Accessibility. Allow Python in System Settings > Privacy "
+                    "& Security > Accessibility, then choose this item again.")
         write_conf(self.cfg)
         self.mark_checks()
 
@@ -239,6 +286,28 @@ class KokoroApp(rumps.App):
         sender.state = os.path.exists(AGENT)
 
     # --- state watcher -------------------------------------------------
+    def listen(self):
+        """Follow the daemon's playback events and hand them to the player.
+
+        The daemon comes and goes, so keep trying to reconnect. Connecting
+        does not start it.
+        """
+        while True:
+            heard = False
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                    s.connect(SOCK)
+                    s.sendall(b"WATCH")
+                    s.shutdown(socket.SHUT_WR)
+                    for line in s.makefile("rb"):
+                        heard = True
+                        AppHelper.callAfter(self.player.handle, json.loads(line))
+            except (OSError, ValueError):
+                pass
+            if heard:       # daemon quit, perhaps mid-sentence
+                AppHelper.callAfter(self.player.handle, {"ev": "gone"})
+            time.sleep(1)
+
     def watch(self):
         while True:
             self.title = BUSY if speaking() else IDLE

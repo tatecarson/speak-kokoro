@@ -41,9 +41,44 @@ From a terminal:
 speak-kokoro "hello"              # speak an argument
 pbpaste | speak-kokoro            # speak stdin
 speak-kokoro --stop               # stop playback
+speak-kokoro --toggle             # pause or resume; replays the last text if idle
+speak-kokoro --next               # skip to the next sentence
+speak-kokoro --prev               # back to the start of this or the previous sentence
 speak-kokoro --quit               # unload the model, freeing its memory
 speak-kokoro --voices             # list all 54 voices
 ```
+
+## Playback controls and highlighting
+
+While it reads, a floating panel shows rewind, play/pause and forward buttons,
+where you are ("3 / 12"), and, unless the document is already showing it, the
+text being read. Rewind goes to the start of the current sentence, or to the
+previous one if you are less than a second and a half in. Closing the panel
+stops reading. It hides itself a few seconds after reading ends. Turn it off
+with Show Playback Controls in the menu.
+
+Kokoro reports when each word starts, so the daemon knows which word you are
+hearing. With Highlight Words in Document on, the menu bar app also draws a
+yellow marker over that word in the app you selected it from, the way Word's
+Read Aloud does. It finds the word through macOS Accessibility, which needs two
+things:
+
+- Permission. Choosing the menu item the first time opens the system prompt;
+  allow Python under System Settings > Privacy & Security > Accessibility.
+  This grants it to the Python interpreter the app runs under, so any script
+  run by that interpreter gets it too.
+- An app that reports where its text is on screen. Word, TextEdit, Pages and
+  most native text views do. Browsers mostly do not, and text read from the
+  clipboard has no document to point at. In those cases only the panel
+  highlights.
+
+The marker follows scrolling and hides when you switch to another app or
+scroll the word out of view. If the text in the app no longer matches what
+was selected, it stays off rather than marking the wrong words.
+
+When the marker is working, the words are already highlighted in your
+document, so the panel shrinks to just its buttons. When it isn't, the panel
+shows the whole text with the sentence and word being read marked in it.
 
 Voice and speed live in `~/.config/kokoro-tts.conf` and are read fresh on every
 press, so changes take effect without restarting anything.
@@ -122,6 +157,12 @@ for gaps recreates the latency problem. You need both.
 Playback is a single continuous `sounddevice` stream written in 80 ms blocks,
 rather than one `afplay` per chunk. This removes process-spawn gaps between
 chunks and lets a stop request land in under 50 ms.
+
+Each sentence's audio is kept after it plays, so rewinding replays it at once
+instead of running the model again. The daemon synthesizes two sentences
+ahead of the one playing, so skipping forward usually lands on audio that is
+already there. The menu bar app follows playback over the same socket: it
+sends `WATCH` and gets a JSON line for each sentence, word and pause.
 
 ## Uninstall
 

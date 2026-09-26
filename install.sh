@@ -20,7 +20,14 @@ python3 -m venv "$VENV"
 echo "==> Installing files"
 mkdir -p "$HOME/.local/bin" "$HOME/.config"
 install -m 755 "$SRC/bin/speak-kokoro" "$HOME/.local/bin/speak-kokoro"
-install -m 644 "$SRC/src/kokoro_daemon.py" "$SRC/src/kokoro_menubar.py" "$VENV/"
+install -m 644 "$SRC/src/kokoro_daemon.py" "$SRC/src/kokoro_menubar.py" \
+  "$SRC/src/kokoro_player.py" "$VENV/"
+
+# Anything already running is still the old code.
+pkill -f kokoro_daemon.py 2>/dev/null || true
+if [ -f "$HOME/Library/LaunchAgents/com.tatecarson.kokoro-tts.plist" ]; then
+  pkill -f kokoro_menubar.py 2>/dev/null || true    # launchd restarts it
+fi
 
 if [ ! -f "$HOME/.config/kokoro-lexicon.json" ]; then
   install -m 644 "$SRC/config/kokoro-lexicon.json" "$HOME/.config/kokoro-lexicon.json"

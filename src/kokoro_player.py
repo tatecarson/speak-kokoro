@@ -15,6 +15,7 @@ Everything here runs on the main thread. The menu bar app forwards daemon
 events with AppHelper.callAfter.
 """
 import re
+import sys
 import threading
 import time
 import unicodedata
@@ -44,6 +45,7 @@ from AppKit import (NSApp, NSAttributedString, NSBackgroundColorAttributeName,
                     NSWindowStyleMaskResizable, NSWindowStyleMaskTitled, NSWindowStyleMaskUtilityWindow,
                     NSWorkspace)
 from Foundation import NSMakeRange, NSMakeRect, NSObject, NSTimer
+from PyObjCTools import AppHelper
 
 try:
     import ApplicationServices as AX
@@ -56,6 +58,7 @@ MIN_WIDTH = 260
 COMPACT = 48                  # panel content height with only the controls
 REFRESH = 0.25                # seconds between overlay position checks
 AX_TIMEOUT = 0.25             # never let a busy app stall the menu bar
+FIND_FOR = 2.5                # seconds to keep asking an app for its selection
 
 
 VOICES = {
@@ -176,6 +179,40 @@ def _range(value):
     return tuple(rng) if ok else None
 
 
+def log(message):
+    sys.stderr.write(f"{message}\n")
+    sys.stderr.flush()
+
+
+def locate_selection(text):
+    """Where text sits in the focused app's selection, as a highlight target.
+
+    Returns ((element, pid, selection start, offsets), None), or
+    (None, reason) when the app can't say or the selection is other text.
+    """
+    try:
+        system = AX.AXUIElementCreateSystemWide()
+        AX.AXUIElementSetMessagingTimeout(system, AX_TIMEOUT)
+        element = _attr(system, "AXFocusedUIElement")
+        if element is None:
+            return None, "no focused element"
+        AX.AXUIElementSetMessagingTimeout(element, AX_TIMEOUT)
+        selection = _attr(element, "AXSelectedTextRange")
+        selected = _attr(element, "AXSelectedText")
+        role = _attr(element, "AXRole")
+        if selection is None or not selected:
+            return None, f"no selection in focused {role}"
+        offsets = align(text, str(selected))
+        if not offsets:
+            return None, f"selection in {role} is different text"
+        err, pid = AX.AXUIElementGetPid(element, None)
+        if err:
+            return None, "no process for element"
+        return (element, pid, _range(selection)[0], offsets), None
+    except Exception as exc:
+        return None, f"error {exc!r}"
+
+
 class DocumentHighlighter:
     """Draws a highlight over the spoken word in the app it was selected in."""
 
@@ -184,34 +221,54 @@ class DocumentHighlighter:
         self.text = None
         self.target = None        # (element, pid, selection start, offsets)
         self.span = None
+        self.searches = 0         # bumped per reading, to drop stale answers
 
-    def attach(self, text):
+    def attach(self, text, found):
         """Find the selection that text was read from, if the app exposes it.
 
-        Called as reading starts, while the text is still selected. A replay
-        of the same text keeps the earlier target, since by then the user may
-        have clicked elsewhere.
+        Called as reading starts, while the text is still selected. Asks off
+        the main thread and keeps asking for a while: when reading is started
+        from a Services hotkey, the app is often still busy handling the
+        Service and doesn't answer the first time. found() is called on the
+        main thread with whether the selection was located.
+
+        A replay of the same text keeps the earlier target, since by then the
+        user may have clicked elsewhere.
         """
+        self.searches += 1
         if text == self.text and self.target:
+            found(True)
             return
         self.text, self.target, self.span = text, None, None
         if not ax_available():
+            found(False)
             return
-        try:
-            element = _attr(AX.AXUIElementCreateSystemWide(), "AXFocusedUIElement")
-            if element is None:
-                return
-            AX.AXUIElementSetMessagingTimeout(element, AX_TIMEOUT)
-            selection = _attr(element, "AXSelectedTextRange")
-            selected = _attr(element, "AXSelectedText")
-            if selection is None or not selected:
-                return
-            offsets = align(text, selected)
-            err, pid = AX.AXUIElementGetPid(element, None)
-            if offsets and not err:
-                self.target = (element, pid, _range(selection)[0], offsets)
-        except Exception:
-            self.target = None
+        search = self.searches
+
+        def look():
+            deadline, tries = time.time() + FIND_FOR, 0
+            while True:
+                tries += 1
+                target, why = locate_selection(text)
+                if target or time.time() > deadline:
+                    break
+                time.sleep(0.1)
+            AppHelper.callAfter(self.located, search, target, why, tries, found)
+
+        threading.Thread(target=look, daemon=True).start()
+
+    def located(self, search, target, why, tries, found):
+        if search != self.searches:
+            return                # a newer reading started meanwhile
+        if target is None:
+            log(f"highlight off: {why} (asked {tries} times)")
+            found(False)
+            return
+        if tries > 1:
+            log(f"highlight: selection found on try {tries}")
+        self.target = target
+        found(True)
+        self.refresh()
 
     def show(self, s, e):
         self.span = (s, e)
@@ -377,6 +434,7 @@ class Player:
         self.u16 = [0]            # UTF-16 offset of each index in self.text
         self.marks = []           # ranges painted in the panel, to undo
         self.full_height = HEIGHT # panel content height when showing text
+        self.compact = False
         self.active = False       # an utterance is loaded, playing or paused
         self.playing = False
         self.ticker = None
@@ -405,26 +463,32 @@ class Player:
     def begin(self, ev):
         self.id, self.text, self.spans = ev["id"], ev["text"], ev["spans"]
         self.active = True
-        if self.highlight:
-            self.highlighter.attach(self.text)
-        else:
-            self.highlighter.clear()
+        self.highlighter.clear()
         self.u16 = [0]
         for ch in self.text:
             self.u16.append(self.u16[-1] + (2 if ord(ch) > 0xFFFF else 1))
         self.sentence = self.word = None
         if self.show_panel or self.visible():
             self.ensure_panel()
-            # If the words are being marked in the document itself, a second
-            # copy of the text in the panel is just a distraction.
-            self.fit(compact=self.highlighter.target is not None)
+            # Guess the last reading's layout until we know whether the
+            # document can show the words itself; usually it's the same app.
+            self.fit(compact=self.compact and self.highlight)
             self.load_text()
             self.panel.orderFrontRegardless()
+        if self.highlight:
+            self.highlighter.attach(self.text, self.document_found)
+        else:
+            self.document_found(False)
         self.set_playing(True)
         self.show_sentence(0)
         if self.ticker is None:
             self.ticker = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                 REFRESH, self.target, "refresh:", None, True)
+
+    def document_found(self, found):
+        """Hide the panel's copy of the text if the document is showing it."""
+        if self.active and self.panel is not None and found != self.compact:
+            self.fit(compact=found)
 
     def finish(self):
         """Reading ended. The panel stays open, ready for the next selection."""
@@ -564,6 +628,7 @@ class Player:
 
     def fit(self, compact):
         """Show the text, or shrink to the buttons, keeping the top edge put."""
+        self.compact = compact
         panel = self.panel
         content = panel.contentRectForFrameRect_(panel.frame())
         if compact:

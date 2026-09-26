@@ -2,9 +2,11 @@
 
 Two views of the same daemon events:
 
-- a floating panel with rewind / play-pause / forward, showing the whole
-  text with the sentence and word being read marked, which works for any text
-  (and shrinks to just the buttons when the document shows the words itself);
+- a floating panel with voice and speed pickers and rewind / play-pause /
+  forward, showing the whole text with the sentence and word being read
+  marked, which works for any text (and shrinks to just the controls when the
+  document shows the words itself). Like Word's Read Aloud it stays open:
+  select other text and press play to read that instead;
 - an overlay drawn over the word in the document it came from, which needs
   Accessibility permission and an app that reports where its text is on
   screen (Word, TextEdit, Pages and most native text views do).
@@ -12,16 +14,25 @@ Two views of the same daemon events:
 Everything here runs on the main thread. The menu bar app forwards daemon
 events with AppHelper.callAfter.
 """
+import re
+import sys
+import threading
+import time
 import unicodedata
 
 import objc
-from AppKit import (NSAttributedString, NSBackgroundColorAttributeName,
-                    NSBackingStoreBuffered, NSButton, NSColor, NSFont,
+from AppKit import (NSApp, NSAttributedString, NSBackgroundColorAttributeName,
+                    NSBackingStoreBuffered, NSButton, NSColor,
+                    NSFont,
                     NSFontAttributeName, NSFontWeightRegular,
                     NSForegroundColorAttributeName, NSImage, NSImageOnly,
-                    NSImageSymbolConfiguration, NSPanel, NSScreen,
-                    NSScrollView, NSTextAlignmentRight, NSTextField,
-                    NSTextView, NSView, NSViewHeightSizable,
+                    NSImageSymbolConfiguration, NSMaxYEdge, NSMenuItem,
+                    NSMinYEdge, NSPanel, NSPopover,
+                    NSPopoverBehaviorTransient, NSSlider,
+                    NSTextAlignmentRight, NSTextField,
+                    NSViewController,
+                    NSPasteboard, NSPasteboardItem, NSPasteboardTypeString,
+                    NSPopUpButton, NSRunningApplication, NSScreen, NSScrollView, NSTextView, NSView, NSViewHeightSizable,
                     NSViewMaxXMargin, NSViewMinXMargin, NSViewMinYMargin,
                     NSViewWidthSizable, NSWindow,
                     NSWindowCollectionBehaviorCanJoinAllSpaces,
@@ -34,17 +45,32 @@ from AppKit import (NSAttributedString, NSBackgroundColorAttributeName,
                     NSWindowStyleMaskResizable, NSWindowStyleMaskTitled, NSWindowStyleMaskUtilityWindow,
                     NSWorkspace)
 from Foundation import NSMakeRange, NSMakeRect, NSObject, NSTimer
+from PyObjCTools import AppHelper
 
 try:
     import ApplicationServices as AX
+    import Quartz
 except ImportError:           # pyobjc-framework-ApplicationServices missing
-    AX = None
+    AX = Quartz = None
 
 WIDTH, HEIGHT = 400, 300
-COMPACT = 48                  # panel content height with only the buttons
-LINGER = 4.0                  # seconds the panel stays up after reading ends
+MIN_WIDTH = 260
+COMPACT = 48                  # panel content height with only the controls
 REFRESH = 0.25                # seconds between overlay position checks
 AX_TIMEOUT = 0.25             # never let a busy app stall the menu bar
+FIND_FOR = 2.5                # seconds to keep asking an app for its selection
+
+
+VOICES = {
+    "US female": "af_heart af_bella af_nicole af_sarah af_sky af_alloy af_aoede "
+                 "af_jessica af_kore af_nova af_river".split(),
+    "US male": "am_michael am_adam am_echo am_eric am_fenrir am_liam am_onyx "
+               "am_puck am_santa".split(),
+    "UK female": "bf_emma bf_alice bf_isabella bf_lily".split(),
+    "UK male": "bm_george bm_daniel bm_fable bm_lewis".split(),
+}
+SPEEDS = ["0.8", "0.9", "1.0", "1.1", "1.2", "1.3", "1.5", "1.75", "2.0"]
+HINT = "Select text in any app, then press play."
 
 
 def ax_available():
@@ -89,6 +115,60 @@ def align(spoken, selected):
     return starts, ends
 
 
+def selected_text():
+    """What is selected in the frontmost app, or "" if nothing can be found.
+
+    Asks through Accessibility first. Apps that don't answer (some browsers,
+    Electron apps) get a simulated Copy, with the clipboard put back after.
+    Called off the main thread, since the copy has to wait for the app.
+    """
+    if not ax_available():
+        return ""
+    try:
+        element = _attr(AX.AXUIElementCreateSystemWide(), "AXFocusedUIElement")
+        if element is not None:
+            AX.AXUIElementSetMessagingTimeout(element, AX_TIMEOUT)
+            text = _attr(element, "AXSelectedText")
+            if text and str(text).strip():
+                return str(text)
+    except Exception:
+        pass
+    return copied_text()
+
+
+def copied_text():
+    pb = NSPasteboard.generalPasteboard()
+    saved = [{t: item.dataForType_(t) for t in item.types()}
+             for item in pb.pasteboardItems() or []]
+    before = pb.changeCount()
+    for down in (True, False):
+        event = Quartz.CGEventCreateKeyboardEvent(None, 8, down)    # "c"
+        Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+    for _ in range(15):
+        time.sleep(0.02)
+        if pb.changeCount() != before:
+            break
+    else:
+        return ""             # nothing selected, so nothing was copied
+    text = pb.stringForType_(NSPasteboardTypeString) or ""
+    pb.clearContents()
+    items = []
+    for types in saved:
+        item = NSPasteboardItem.alloc().init()
+        for kind, data in types.items():
+            if data is not None:
+                item.setData_forType_(data, kind)
+        items.append(item)
+    if items:
+        pb.writeObjects_(items)
+    return text
+
+
+def _same(a, b):
+    return re.sub(r"\s+", " ", a).strip() == re.sub(r"\s+", " ", b).strip()
+
+
 def _attr(element, name):
     err, value = AX.AXUIElementCopyAttributeValue(element, name, None)
     return None if err else value
@@ -99,6 +179,40 @@ def _range(value):
     return tuple(rng) if ok else None
 
 
+def log(message):
+    sys.stderr.write(f"{message}\n")
+    sys.stderr.flush()
+
+
+def locate_selection(text):
+    """Where text sits in the focused app's selection, as a highlight target.
+
+    Returns ((element, pid, selection start, offsets), None), or
+    (None, reason) when the app can't say or the selection is other text.
+    """
+    try:
+        system = AX.AXUIElementCreateSystemWide()
+        AX.AXUIElementSetMessagingTimeout(system, AX_TIMEOUT)
+        element = _attr(system, "AXFocusedUIElement")
+        if element is None:
+            return None, "no focused element"
+        AX.AXUIElementSetMessagingTimeout(element, AX_TIMEOUT)
+        selection = _attr(element, "AXSelectedTextRange")
+        selected = _attr(element, "AXSelectedText")
+        role = _attr(element, "AXRole")
+        if selection is None or not selected:
+            return None, f"no selection in focused {role}"
+        offsets = align(text, str(selected))
+        if not offsets:
+            return None, f"selection in {role} is different text"
+        err, pid = AX.AXUIElementGetPid(element, None)
+        if err:
+            return None, "no process for element"
+        return (element, pid, _range(selection)[0], offsets), None
+    except Exception as exc:
+        return None, f"error {exc!r}"
+
+
 class DocumentHighlighter:
     """Draws a highlight over the spoken word in the app it was selected in."""
 
@@ -107,34 +221,54 @@ class DocumentHighlighter:
         self.text = None
         self.target = None        # (element, pid, selection start, offsets)
         self.span = None
+        self.searches = 0         # bumped per reading, to drop stale answers
 
-    def attach(self, text):
+    def attach(self, text, found):
         """Find the selection that text was read from, if the app exposes it.
 
-        Called as reading starts, while the text is still selected. A replay
-        of the same text keeps the earlier target, since by then the user may
-        have clicked elsewhere.
+        Called as reading starts, while the text is still selected. Asks off
+        the main thread and keeps asking for a while: when reading is started
+        from a Services hotkey, the app is often still busy handling the
+        Service and doesn't answer the first time. found() is called on the
+        main thread with whether the selection was located.
+
+        A replay of the same text keeps the earlier target, since by then the
+        user may have clicked elsewhere.
         """
+        self.searches += 1
         if text == self.text and self.target:
+            found(True)
             return
         self.text, self.target, self.span = text, None, None
         if not ax_available():
+            found(False)
             return
-        try:
-            element = _attr(AX.AXUIElementCreateSystemWide(), "AXFocusedUIElement")
-            if element is None:
-                return
-            AX.AXUIElementSetMessagingTimeout(element, AX_TIMEOUT)
-            selection = _attr(element, "AXSelectedTextRange")
-            selected = _attr(element, "AXSelectedText")
-            if selection is None or not selected:
-                return
-            offsets = align(text, selected)
-            err, pid = AX.AXUIElementGetPid(element, None)
-            if offsets and not err:
-                self.target = (element, pid, _range(selection)[0], offsets)
-        except Exception:
-            self.target = None
+        search = self.searches
+
+        def look():
+            deadline, tries = time.time() + FIND_FOR, 0
+            while True:
+                tries += 1
+                target, why = locate_selection(text)
+                if target or time.time() > deadline:
+                    break
+                time.sleep(0.1)
+            AppHelper.callAfter(self.located, search, target, why, tries, found)
+
+        threading.Thread(target=look, daemon=True).start()
+
+    def located(self, search, target, why, tries, found):
+        if search != self.searches:
+            return                # a newer reading started meanwhile
+        if target is None:
+            log(f"highlight off: {why} (asked {tries} times)")
+            found(False)
+            return
+        if tries > 1:
+            log(f"highlight: selection found on try {tries}")
+        self.target = target
+        found(True)
+        self.refresh()
 
     def show(self, s, e):
         self.span = (s, e)
@@ -230,7 +364,7 @@ class KokoroPlayerTarget(NSObject):
         self.player.command("PREV")
 
     def toggle_(self, _):
-        self.player.command("TOGGLE")
+        self.player.play_pressed()
 
     def next_(self, _):
         self.player.command("NEXT")
@@ -239,8 +373,17 @@ class KokoroPlayerTarget(NSObject):
         self.player.close()
         return False
 
-    def linger_(self, _):
-        self.player.linger_done()
+    def settings_(self, sender):
+        self.player.toggle_settings(sender)
+
+    def popoverDidClose_(self, _):
+        self.player.give_back_focus()
+
+    def voice_(self, sender):
+        self.player.set_voice(sender.selectedItem().representedObject())
+
+    def speed_(self, sender):
+        self.player.set_speed(SPEEDS[int(round(sender.doubleValue()))])
 
     def refresh_(self, _):
         self.player.highlighter.refresh()
@@ -253,14 +396,31 @@ def _symbol(name, label, size):
     return image.imageWithSymbolConfiguration_(config)
 
 
+def _settings_symbol():
+    """A speaker with a small gear, like Read Aloud's settings button."""
+    speaker = _symbol("speaker.wave.2.fill", "Voice and speed", 17)
+    gear = _symbol("gearshape.fill", None, 9)
+    size = (speaker.size().width + 7, speaker.size().height + 5)
+
+    def draw(rect):
+        speaker.drawInRect_(((0, 5), speaker.size()))
+        gear.drawInRect_(((size[0] - gear.size().width, 0), gear.size()))
+        return True
+
+    image = NSImage.imageWithSize_flipped_drawingHandler_(size, False, draw)
+    image.setTemplate_(True)          # tinted like the other buttons
+    return image
+
+
 class Player:
     """The floating controls, and the glue from daemon events to highlights.
 
-    send is called with a daemon command ("TOGGLE", "NEXT", ...).
+    send is called with a daemon command ("TOGGLE", "NEXT", ...). cfg is the
+    menu bar app's settings dict (VOICE, SPEED), and save writes it out.
     """
 
-    def __init__(self, send):
-        self.send = send
+    def __init__(self, send, cfg, save):
+        self.send, self.cfg, self.save = send, cfg, save
         self.show_panel = True
         self.highlight = True
         self.target = KokoroPlayerTarget.alloc().initWithPlayer_(self)
@@ -274,10 +434,12 @@ class Player:
         self.u16 = [0]            # UTF-16 offset of each index in self.text
         self.marks = []           # ranges painted in the panel, to undo
         self.full_height = HEIGHT # panel content height when showing text
+        self.compact = False
         self.active = False       # an utterance is loaded, playing or paused
         self.playing = False
-        self.linger = None
         self.ticker = None
+        self.settings = None      # the voice and speed popover
+        self.return_to = None     # app to hand focus back to after it
 
     # --- daemon events -------------------------------------------------
     def handle(self, ev):
@@ -301,70 +463,143 @@ class Player:
     def begin(self, ev):
         self.id, self.text, self.spans = ev["id"], ev["text"], ev["spans"]
         self.active = True
-        self.cancel_linger()
-        if self.highlight:
-            self.highlighter.attach(self.text)
-        else:
-            self.highlighter.clear()
+        self.highlighter.clear()
         self.u16 = [0]
         for ch in self.text:
             self.u16.append(self.u16[-1] + (2 if ord(ch) > 0xFFFF else 1))
         self.sentence = self.word = None
-        if self.show_panel:
+        if self.show_panel or self.visible():
             self.ensure_panel()
-            # If the words are being marked in the document itself, a second
-            # copy of the text in the panel is just a distraction.
-            self.fit(compact=self.highlighter.target is not None)
+            # Guess the last reading's layout until we know whether the
+            # document can show the words itself; usually it's the same app.
+            self.fit(compact=self.compact and self.highlight)
             self.load_text()
             self.panel.orderFrontRegardless()
+        if self.highlight:
+            self.highlighter.attach(self.text, self.document_found)
+        else:
+            self.document_found(False)
         self.set_playing(True)
         self.show_sentence(0)
         if self.ticker is None:
             self.ticker = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                 REFRESH, self.target, "refresh:", None, True)
 
+    def document_found(self, found):
+        """Hide the panel's copy of the text if the document is showing it."""
+        if self.active and self.panel is not None and found != self.compact:
+            self.fit(compact=found)
+
     def finish(self):
+        """Reading ended. The panel stays open, ready for the next selection."""
         self.active = False
         self.set_playing(False)
         self.highlighter.clear()
         self.sentence = self.word = None
         self.paint()
+        if self.panel is not None:
+            self.panel.setTitle_("Kokoro")
         if self.ticker is not None:
             self.ticker.invalidate()
             self.ticker = None
-        if self.panel is not None and self.panel.isVisible():
-            self.cancel_linger()
-            self.linger = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-                LINGER, self.target, "linger:", None, False)
 
     # --- controls ------------------------------------------------------
     def command(self, cmd):
-        self.cancel_linger()
         self.send(cmd)
+
+    def play_pressed(self):
+        """Pause, or read: the new selection if there is one, as Word does."""
+        if self.settings is not None and self.settings.isShown():
+            self.settings.close()           # also hands focus back
+        if self.playing:
+            self.send("TOGGLE")
+            return
+        # Finding the selection can mean waiting on another app; not here.
+        threading.Thread(target=self.play_selection, daemon=True).start()
+
+    def play_selection(self):
+        # Wait for the document's app to be frontmost again, or we would be
+        # asking ourselves what is selected.
+        me = NSRunningApplication.currentApplication().processIdentifier()
+        for _ in range(25):
+            front = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if front is None or front.processIdentifier() != me:
+                break
+            time.sleep(0.02)
+        text = selected_text()
+        if text.strip() and not _same(text, self.text):
+            self.say(text)
+        elif self.active:
+            self.send("TOGGLE")             # resume where it paused
+        elif self.text:
+            self.say(self.text)             # read the last text again
+
+    def say(self, text):
+        self.send(f"SAY {self.cfg['VOICE']} {self.cfg['SPEED']} {text}")
+
+    def toggle_settings(self, button):
+        if self.settings is None:
+            self.settings = self.make_settings()
+        if self.settings.isShown():
+            self.settings.close()
+            return
+        # Using the popover's controls makes this app active; remember where
+        # the user was so their document gets focus back afterwards.
+        front = NSWorkspace.sharedWorkspace().frontmostApplication()
+        me = NSRunningApplication.currentApplication()
+        if front is not None and front.processIdentifier() != me.processIdentifier():
+            self.return_to = front
+        edge = NSMaxYEdge if button.isFlipped() else NSMinYEdge   # below it
+        self.settings.showRelativeToRect_ofView_preferredEdge_(
+            button.bounds(), button, edge)
+
+    def give_back_focus(self):
+        app, self.return_to = self.return_to, None
+        front = NSWorkspace.sharedWorkspace().frontmostApplication()
+        me = NSRunningApplication.currentApplication().processIdentifier()
+        # NSApp.isActive() can still say False here, so ask the system.
+        if app is None or front is None or front.processIdentifier() != me:
+            return
+        if hasattr(NSApp, "yieldActivationToApplication_"):    # macOS 14+
+            NSApp.yieldActivationToApplication_(app)
+        app.activateWithOptions_(0)
+
+    def set_voice(self, voice):
+        self.cfg["VOICE"] = voice
+        self.settings_changed()
+
+    def set_speed(self, speed):
+        self.cfg["SPEED"] = speed
+        if self.settings is not None:
+            self.speed_label.setStringValue_(f"{float(speed):g}×")
+        self.settings_changed()
+
+    def settings_changed(self):
+        self.save()
+        if self.active:
+            self.send(f"SET {self.cfg['VOICE']} {self.cfg['SPEED']}")
+
+    def open(self):
+        """Show the panel without reading anything, e.g. from the menu."""
+        self.ensure_panel()
+        if not self.active:
+            self.fit(compact=False)
+            self.load_text()
+        self.panel.orderFrontRegardless()
+
+    def visible(self):
+        return self.panel is not None and self.panel.isVisible()
 
     def close(self):
         """The panel's close button stops reading, as in Word."""
-        self.cancel_linger()
         if self.active:
             self.send("STOP")
         self.highlighter.clear()
         if self.panel is not None:
             self.panel.orderOut_(None)
 
-    def linger_done(self):
-        self.linger = None
-        if not self.active and self.panel is not None:
-            self.panel.orderOut_(None)
-
-    def cancel_linger(self):
-        if self.linger is not None:
-            self.linger.invalidate()
-            self.linger = None
-
     def set_options(self, show_panel, highlight):
         self.show_panel, self.highlight = show_panel, highlight
-        if not show_panel and self.panel is not None:
-            self.panel.orderOut_(None)
         if not highlight:
             self.highlighter.clear()
 
@@ -382,7 +617,7 @@ class Player:
             return
         self.sentence, self.word = i, None
         if self.panel is not None:
-            self.counter.setStringValue_(f"{i + 1} / {len(self.spans)}")
+            self.panel.setTitle_(f"Kokoro  ·  {i + 1} of {len(self.spans)}")
         self.paint()
 
     def show_word(self, s, e):
@@ -393,17 +628,18 @@ class Player:
 
     def fit(self, compact):
         """Show the text, or shrink to the buttons, keeping the top edge put."""
+        self.compact = compact
         panel = self.panel
         content = panel.contentRectForFrameRect_(panel.frame())
         if compact:
             if content.size.height > COMPACT:
                 self.full_height = content.size.height
             height = COMPACT
-            panel.setContentMinSize_((260, COMPACT))
+            panel.setContentMinSize_((MIN_WIDTH, COMPACT))
             panel.setContentMaxSize_((4000, COMPACT))
         else:
             height = max(self.full_height, 140)
-            panel.setContentMinSize_((260, 140))
+            panel.setContentMinSize_((MIN_WIDTH, 140))
             panel.setContentMaxSize_((4000, 4000))
         self.scroll.setHidden_(compact)
         if height != content.size.height:
@@ -418,10 +654,12 @@ class Player:
 
     def load_text(self):
         """Put the whole selection in the panel; reading then marks it in place."""
+        color = NSColor.labelColor() if self.text else NSColor.secondaryLabelColor()
         attrs = {NSFontAttributeName: NSFont.systemFontOfSize_(14),
-                 NSForegroundColorAttributeName: NSColor.labelColor()}
+                 NSForegroundColorAttributeName: color}
         self.text_view.textStorage().setAttributedString_(
-            NSAttributedString.alloc().initWithString_attributes_(self.text, attrs))
+            NSAttributedString.alloc().initWithString_attributes_(
+                self.text or HINT, attrs))
         self.marks = []
         self.text_view.scrollRangeToVisible_(NSMakeRange(0, 0))
 
@@ -479,6 +717,61 @@ class Player:
         clip.scrollToPoint_((0, y))
         view.enclosingScrollView().reflectScrolledClipView_(clip)
 
+    def make_settings(self):
+        """The popover behind the speaker button: a speed slider and voices."""
+        view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 240, 128))
+
+        def label(text, frame, secondary=False):
+            field = NSTextField.labelWithString_(text)
+            field.setFrame_(frame)
+            if secondary:
+                field.setTextColor_(NSColor.secondaryLabelColor())
+                field.setAlignment_(NSTextAlignmentRight)
+            view.addSubview_(field)
+            return field
+
+        label("Reading speed", NSMakeRect(16, 100, 150, 17))
+        self.speed_label = label(f"{float(self.cfg['SPEED']):g}×",
+                                 NSMakeRect(170, 100, 54, 17), secondary=True)
+        slider = NSSlider.alloc().initWithFrame_(NSMakeRect(14, 72, 212, 24))
+        slider.setMinValue_(0)
+        slider.setMaxValue_(len(SPEEDS) - 1)
+        slider.setNumberOfTickMarks_(len(SPEEDS))
+        slider.setAllowsTickMarkValuesOnly_(True)
+        slider.setContinuous_(False)       # re-voice once, on release
+        if self.cfg["SPEED"] in SPEEDS:
+            slider.setDoubleValue_(SPEEDS.index(self.cfg["SPEED"]))
+        slider.setTarget_(self.target)
+        slider.setAction_("speed:")
+        view.addSubview_(slider)
+
+        label("Voice", NSMakeRect(16, 44, 150, 17))
+        voices = NSPopUpButton.alloc().initWithFrame_pullsDown_(
+            NSMakeRect(12, 12, 216, 26), False)
+        for group, names in VOICES.items():
+            voices.menu().addItem_(NSMenuItem.sectionHeaderWithTitle_(group))
+            for name in names:
+                item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                    name.split("_", 1)[1].capitalize(), None, "")
+                item.setRepresentedObject_(name)
+                item.setIndentationLevel_(1)
+                voices.menu().addItem_(item)
+        index = voices.indexOfItemWithRepresentedObject_(self.cfg["VOICE"])
+        if index >= 0:
+            voices.selectItemAtIndex_(index)
+        voices.setTarget_(self.target)
+        voices.setAction_("voice:")
+        view.addSubview_(voices)
+
+        controller = NSViewController.alloc().init()
+        controller.setView_(view)
+        popover = NSPopover.alloc().init()
+        popover.setContentViewController_(controller)
+        popover.setContentSize_(view.frame().size)
+        popover.setBehavior_(NSPopoverBehaviorTransient)
+        popover.setDelegate_(self.target)
+        return popover
+
     def ensure_panel(self):
         if self.panel is not None:
             return
@@ -525,14 +818,16 @@ class Player:
             if action == "toggle:":
                 self.play_button = button
 
-        counter = NSTextField.labelWithString_("")
-        counter.setFrame_(NSMakeRect(WIDTH - 76, top + 9, 64, 18))
-        counter.setAlignment_(NSTextAlignmentRight)
-        counter.setFont_(NSFont.monospacedDigitSystemFontOfSize_weight_(11, NSFontWeightRegular))
-        counter.setTextColor_(NSColor.secondaryLabelColor())
-        counter.setAutoresizingMask_(NSViewMinXMargin | NSViewMinYMargin)
-        content.addSubview_(counter)
-        self.counter = counter
+        button = NSButton.alloc().initWithFrame_(NSMakeRect(WIDTH - 48, top, 40, 36))
+        button.setBordered_(False)
+        button.setImagePosition_(NSImageOnly)
+        button.setImage_(_settings_symbol())
+        button.setContentTintColor_(NSColor.labelColor())
+        button.setToolTip_("Voice and speed")
+        button.setTarget_(self.target)
+        button.setAction_("settings:")
+        button.setAutoresizingMask_(NSViewMinXMargin | NSViewMinYMargin)
+        content.addSubview_(button)
 
         scroll = NSScrollView.alloc().initWithFrame_(
             NSMakeRect(12, 10, WIDTH - 24, top - 16))

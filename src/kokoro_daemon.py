@@ -6,6 +6,8 @@ Protocol over a unix socket, one message per request:
     STOP
     TOGGLE          pause or resume; replays the last text if nothing is playing
     NEXT / PREV     skip to the next sentence, or back to the previous one
+    SET <voice> <speed>
+                    change voice and speed, restarting the current sentence
     WATCH           keep the connection open and receive playback events as
                     JSON lines (see publish())
 Exits after IDLE_TIMEOUT seconds with no requests.
@@ -223,8 +225,15 @@ watch_lock = threading.Lock()
 
 
 def get_pipeline(lang):
+    """Pipeline for a language, all sharing one copy of the model.
+
+    Only the text-to-phoneme front end differs between languages, so a
+    second KModel for British voices would just be another 300 MB.
+    """
     if lang not in pipelines:
-        pipelines[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M")
+        shared = next(iter(pipelines.values()), None)
+        pipelines[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M",
+                                    model=shared.model if shared else True)
     return pipelines[lang]
 
 
@@ -268,6 +277,7 @@ class Session:
         self.pos = 0              # sentence playing
         self.offset = 0           # samples of it written so far
         self.jumps = 0            # bumped by NEXT/PREV to interrupt playback
+        self.version = 0          # bumped by SET; older audio is discarded
         self.paused = False
         self.done = False
         self.word = None
@@ -312,20 +322,33 @@ class Session:
         if was_paused:
             self.event("state", paused=False)
 
+    def configure(self, voice, speed):
+        """Switch voice or speed, re-reading the current sentence with it."""
+        with self.cond:
+            if (voice, speed) == (self.voice, self.speed):
+                return
+            self.voice, self.speed = voice, speed
+            self.version += 1
+            self.audio.clear()
+            self.jumps += 1             # restart this sentence; pause is kept
+            self.cond.notify_all()
+
     # --- synthesis ------------------------------------------------------
-    def synthesize(self, pipeline, i):
+    def synthesize(self, i, voice, speed):
         """Audio for sentence i, with word timings in samples.
 
         Returns (samples, words) where each word is (at, s, e): the sample
         it starts on and its span in self.text.
         """
+        pipeline = get_pipeline(voice[0])
+        apply_lexicon(pipeline)
         s, e = self.spans[i]
         raw = self.text[s:e]
         pieces, words, length, cursor = [], [], 0, 0
         pause = PAUSE.get(raw[-1:], DEFAULT_PAUSE)
         if i == len(self.spans) - 1:
             pause = 0.0
-        for result in pipeline(clean(raw), voice=self.voice, speed=self.speed):
+        for result in pipeline(clean(raw), voice=voice, speed=speed):
             audio, cut = trim(result.audio)
             for tok in result.tokens or ():
                 if tok.start_ts is None or not any(c.isalnum() for c in tok.text):
@@ -348,7 +371,7 @@ class Session:
         samples = np.concatenate(pieces) if pieces else np.zeros(0, np.float32)
         return samples, words
 
-    def produce(self, pipeline, mark):
+    def produce(self, mark):
         """Keep the next few sentences from the play head synthesized."""
         while True:
             with self.cond:
@@ -361,9 +384,12 @@ class Session:
                     if todo is not None:
                         break
                     self.cond.wait()
-            audio = self.synthesize(pipeline, todo)
+                version, voice, speed = self.version, self.voice, self.speed
+            audio = self.synthesize(todo, voice, speed)
             mark(f"chunk {todo} synthesized")
             with self.cond:
+                if version != self.version:
+                    continue            # settings changed mid-synthesis
                 self.audio[todo] = audio
                 for old in [k for k in self.audio if k < self.pos - KEEP_BEHIND]:
                     del self.audio[old]
@@ -372,10 +398,7 @@ class Session:
     # --- playback -------------------------------------------------------
     def run(self, mark):
         self.event("start", text=self.text, spans=self.spans)
-        pipeline = get_pipeline(self.voice[0])
-        apply_lexicon(pipeline)
-        threading.Thread(target=self.produce, args=(pipeline, mark),
-                         daemon=True).start()
+        threading.Thread(target=self.produce, args=(mark,), daemon=True).start()
         stream = get_stream()
         open(SPEAKING_FLAG, "w").close()      # menu bar reads this for its icon
         first = True
@@ -515,6 +538,9 @@ def handle(conn):
         session.seek(1)
     elif msg.startswith("PREV") and session:
         session.seek(-1)
+    elif msg.startswith("SET ") and session:
+        _, voice, speed = msg.split()[:3]
+        session.configure(voice, float(speed))
     elif msg.startswith("SAY "):
         _, voice, speed, text = msg.split(" ", 3)
         speak(voice, float(speed), text)

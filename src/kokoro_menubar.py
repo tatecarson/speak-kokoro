@@ -26,16 +26,6 @@ CONF = os.path.expanduser("~/.config/kokoro-tts.conf")
 SPEAK = os.path.expanduser("~/.local/bin/speak-kokoro")
 AGENT = os.path.expanduser("~/Library/LaunchAgents/com.tatecarson.kokoro-tts.plist")
 
-VOICES = {
-    "US female": "af_heart af_bella af_nicole af_sarah af_sky af_alloy af_aoede "
-                 "af_jessica af_kore af_nova af_river".split(),
-    "US male": "am_michael am_adam am_echo am_eric am_fenrir am_liam am_onyx "
-               "am_puck am_santa".split(),
-    "UK female": "bf_emma bf_alice bf_isabella bf_lily".split(),
-    "UK male": "bm_george bm_daniel bm_fable bm_lewis".split(),
-}
-SPEEDS = ["0.9", "1.0", "1.1", "1.2", "1.3", "1.5"]
-
 IDLE, BUSY = "○)", "●)"     # ○) and ●)
 
 
@@ -146,18 +136,13 @@ class KokoroApp(rumps.App):
         self.cfg = read_conf()
         self.loading = False
         self.status = rumps.MenuItem("Model: checking…", callback=None)
-        self.player = kokoro_player.Player(send)
+        self.player = kokoro_player.Player(send, self.cfg,
+                                           lambda: write_conf(self.cfg))
         self.build_menu()
         threading.Thread(target=self.watch, daemon=True).start()
         threading.Thread(target=self.listen, daemon=True).start()
 
     def build_menu(self):
-        voice_menu = []
-        for group, names in VOICES.items():
-            items = [rumps.MenuItem(n, callback=self.pick_voice) for n in names]
-            voice_menu.append([rumps.MenuItem(group), items])
-        speed_items = [rumps.MenuItem(s, callback=self.pick_speed) for s in SPEEDS]
-
         speak_sel = show_shortcut(
             rumps.MenuItem("Select text anywhere, then press"),
             "Speak with Kokoro")
@@ -170,10 +155,9 @@ class KokoroApp(rumps.App):
             speak_sel,
             stop_sel,
             rumps.MenuItem("Speak Clipboard", callback=self.speak_clipboard),
+            rumps.MenuItem("Open Reading Panel", callback=self.open_panel),
             None,
-            [rumps.MenuItem("Voice"), voice_menu],
-            [rumps.MenuItem("Speed"), speed_items],
-            rumps.MenuItem("Show Playback Controls", callback=self.toggle_controls),
+            rumps.MenuItem("Show Panel When Reading", callback=self.toggle_controls),
             rumps.MenuItem("Highlight Words in Document",
                            callback=self.toggle_highlight),
             None,
@@ -188,32 +172,17 @@ class KokoroApp(rumps.App):
         self.mark_checks()
 
     def mark_checks(self):
-        for group in VOICES:
-            for item in self.menu["Voice"][group].values():
-                item.state = item.title == self.cfg["VOICE"]
-        for item in self.menu["Speed"].values():
-            item.state = item.title == self.cfg["SPEED"]
         self.menu["Start at Login"].state = os.path.exists(AGENT)
         controls = self.cfg["CONTROLS"] == "1"
         # Only claim highlighting is on once macOS actually allows it.
         highlight = self.cfg["HIGHLIGHT"] == "1" and kokoro_player.ax_available()
-        self.menu["Show Playback Controls"].state = controls
+        self.menu["Show Panel When Reading"].state = controls
         self.menu["Highlight Words in Document"].state = highlight
         self.player.set_options(controls, highlight)
 
     # --- actions -------------------------------------------------------
-    def pick_voice(self, sender):
-        self.cfg["VOICE"] = sender.title
-        write_conf(self.cfg)
-        self.mark_checks()
-        threading.Thread(
-            target=lambda: self.say(f"This is {sender.title.split('_')[1]}."),
-            daemon=True).start()
-
-    def pick_speed(self, sender):
-        self.cfg["SPEED"] = sender.title
-        write_conf(self.cfg)
-        self.mark_checks()
+    def open_panel(self, _):
+        self.player.open()
 
     def toggle_controls(self, sender):
         self.cfg["CONTROLS"] = "0" if sender.state else "1"

@@ -31,8 +31,8 @@ Services > Text. Suggested: Control-Option-S to speak, Control-Option-X to stop.
 Select text anywhere, press your shortcut. Press it again on a new selection and
 it interrupts the current reading rather than talking over it.
 
-The menu bar app gives you voice and speed pickers, a clipboard reader, and a
-live view of whether the model is loaded. It shows your real key bindings, read
+The menu bar app gives you a reading panel, a clipboard reader, and a live
+view of whether the model is loaded. It shows your real key bindings, read
 from macOS at runtime, so it can never advertise a shortcut you have not set.
 
 From a terminal:
@@ -51,11 +51,21 @@ speak-kokoro --voices             # list all 54 voices
 ## Playback controls and highlighting
 
 While it reads, a floating panel shows rewind, play/pause and forward buttons,
-where you are ("3 / 12"), and, unless the document is already showing it, the
-text being read. Rewind goes to the start of the current sentence, or to the
-previous one if you are less than a second and a half in. Closing the panel
-stops reading. It hides itself a few seconds after reading ends. Turn it off
-with Show Playback Controls in the menu.
+where you are ("3 of 12", in its title), and, unless the document is already
+showing it, the text being read. Rewind goes to the start of the current
+sentence, or to the previous one if you are less than a second and a half in.
+
+Like Word's Read Aloud, the panel stays open. Select other text in any app and
+press play to read that instead; with nothing new selected, play resumes or
+reads the last text again. Open it without reading anything from Open Reading
+Panel in the menu. Closing it stops reading. To keep it from opening by
+itself when you use the hotkey, untick Show Panel When Reading.
+
+The speaker button opens voice and speed. Changes are saved for next time and
+apply straight away: the current sentence starts again in the new voice.
+
+Play finds your selection through Accessibility (see below). For apps that
+don't report it, it presses Copy for you and then puts your clipboard back.
 
 Kokoro reports when each word starts, so the daemon knows which word you are
 hearing. With Highlight Words in Document on, the menu bar app also draws a
@@ -81,7 +91,7 @@ document, so the panel shrinks to just its buttons. When it isn't, the panel
 shows the whole text with the sentence and word being read marked in it.
 
 Voice and speed live in `~/.config/kokoro-tts.conf` and are read fresh on every
-press, so changes take effect without restarting anything.
+press, so changes made there take effect without restarting anything.
 
 ## Fixing a mispronounced word
 

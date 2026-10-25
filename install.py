@@ -67,6 +67,10 @@ def install():
         subprocess.run([str(PYTHON), "-m", "kokoro_cli", "--quit"], check=False)
     venv.EnvBuilder(with_pip=True).create(VENV)
     run([PYTHON, "-m", "pip", "install", "--upgrade", "pip"])
+    if sys.platform in ("win32", "linux"):
+        # The app uses CPU inference. Avoid downloading unused CUDA libraries.
+        run([PYTHON, "-m", "pip", "install", "torch", "--index-url",
+             "https://download.pytorch.org/whl/cpu"])
     run([PYTHON, "-m", "pip", "install", "--upgrade", SOURCE])
     BIN.mkdir(parents=True, exist_ok=True)
     CONFIG.mkdir(parents=True, exist_ok=True)

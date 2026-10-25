@@ -1,8 +1,12 @@
 name: Installation checks
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: installation-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

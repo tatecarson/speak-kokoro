@@ -22,6 +22,8 @@ Windows and Linux currently use a terminal. There is no Windows or Linux tray ap
 - Allow several GB of free disk space for Python dependencies and model files. The main model is about 327 MB, with additional language and voice downloads. The loaded model can use roughly 1.5 GB of memory; usage varies.
 - Allow several minutes for the first installation. Keep internet access available until the first voice finishes downloading.
 
+On Windows and Linux, setup chooses CPU-only PyTorch packages to avoid downloading unused GPU libraries.
+
 The scripts install into your user account. They do not require you to activate a Python environment each time you use the app. System prerequisites may ask for administrator access.
 
 ## Download the project

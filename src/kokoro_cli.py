@@ -17,6 +17,7 @@ def validate_settings(voice, speed):
     speed = float(speed)
     if not math.isfinite(speed) or not 0.5 <= speed <= 2.0:
         raise ValueError("Speed must be a number between 0.5 and 2.0.")
+    runtime.voice_path(voice)
     return voice, speed
 
 

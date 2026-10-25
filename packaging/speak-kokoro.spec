@@ -46,5 +46,5 @@ if sys.platform == "win32":
 coll = COLLECT(*executables, a.binaries, a.datas, name="speak-kokoro", upx=False)
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="Speak Kokoro.app", bundle_identifier="com.tatecarson.speak-kokoro",
-                 info_plist={"CFBundleShortVersionString": "0.4.0", "LSUIElement": True,
+                 info_plist={"CFBundleShortVersionString": "0.4.1", "LSUIElement": True,
                              "NSHighResolutionCapable": True})

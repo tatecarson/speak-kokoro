@@ -5,7 +5,7 @@ if ($Purge) { $SetupArgs += "--purge" }
 if ($Python) {
     & $Python @SetupArgs
 } elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    & py -3.12 @SetupArgs
+    & py -3 @SetupArgs
 } else {
     Write-Error "Python launcher not found. Use -Python with the path to your system Python executable."
     exit 1

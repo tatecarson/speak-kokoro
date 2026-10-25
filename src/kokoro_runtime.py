@@ -117,7 +117,7 @@ def configure_espeak():
 def read_config():
     cfg = {"VOICE": "af_heart", "SPEED": "1.0"}
     try:
-        for line in CONF.read_text(encoding="utf-8").splitlines():
+        for line in CONF.read_text(encoding="utf-8-sig").splitlines():
             key, sep, value = line.strip().partition("=")
             if sep and key.strip() in cfg:
                 cfg[key.strip()] = value.strip().strip("\"'")
@@ -134,7 +134,7 @@ def save_settings(voice, speed):
     voice, speed = validate_settings(voice, speed)
     updates = {"VOICE": voice, "SPEED": f"{speed:g}"}
     try:
-        lines = CONF.read_text(encoding="utf-8").splitlines()
+        lines = CONF.read_text(encoding="utf-8-sig").splitlines()
     except FileNotFoundError:
         lines = []
     output = []

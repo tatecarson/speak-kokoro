@@ -1,4 +1,4 @@
-#define AppVersion "0.4.0"
+#define AppVersion "0.4.1"
 [Setup]
 AppId={{903F68F0-66F7-4B29-8F72-E806CA9AF0B1}
 AppName=Speak Kokoro

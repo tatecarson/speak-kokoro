@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "speak-kokoro"
-version = "0.4.0"
+version = "0.4.1"
 description = "Local Kokoro text-to-speech for macOS, Windows, and Linux"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
   "kokoro==0.9.4",
   # 3.0.14 raises OverflowError while spaCy loads its tokenizer.

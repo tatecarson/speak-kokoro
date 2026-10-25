@@ -33,7 +33,10 @@ def main():
     if sys.argv[1:2] == ["--menubar"] or (sys.platform == "darwin" and len(sys.argv) == 1 and not piped_input):
         from kokoro_desktop import install_mac_services
         from kokoro_menubar import main as menubar
-        install_mac_services()
+        try:
+            install_mac_services()
+        except Exception as exc:
+            print(f"Could not install optional Mac Services: {exc}", file=sys.stderr)
         menubar()
         return 0
     from kokoro_cli import main as cli

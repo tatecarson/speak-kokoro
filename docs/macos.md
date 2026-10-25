@@ -44,6 +44,7 @@ When the marker is working, the words are already highlighted in your
 document, so the panel shrinks to just its buttons. When it isn't, the panel
 shows the whole text with the sentence and word being read marked in it.
 
-Voice and speed live in `~/.config/kokoro-tts.conf` and are read fresh on every
-press, so changes made there take effect without restarting anything.
+Voice and speed live in `~/.config/kokoro-tts.conf`. The menu bar app loads them
+at startup. Restart the app after editing this file by hand. Changes made in
+the app take effect immediately.
 

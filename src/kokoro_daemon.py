@@ -27,6 +27,7 @@ warnings.filterwarnings("ignore")
 
 import kokoro_runtime as runtime
 from kokoro_runtime import SOCKET, SPEAKING_FLAG, LEXICON
+from kokoro_cli import validate_settings
 from filelock import FileLock, Timeout
 
 runtime.configure_espeak()
@@ -116,7 +117,7 @@ def user_lexicon():
         return _lexicon["data"]
     if _lexicon["mtime"] != mtime:
         try:
-            with open(LEXICON, encoding="utf-8") as fh:
+            with open(LEXICON, encoding="utf-8-sig") as fh:
                 loaded = json.load(fh)
             if not isinstance(loaded, dict) or not all(
                 isinstance(k, str) and isinstance(v, str) for k, v in loaded.items()
@@ -330,6 +331,7 @@ class Session:
 
     def configure(self, voice, speed):
         """Switch voice or speed, re-reading the current sentence with it."""
+        voice, speed = validate_settings(voice, speed)
         with self.cond:
             if (voice, speed) == (self.voice, self.speed):
                 return
@@ -490,6 +492,7 @@ class Session:
 
 def speak(voice, speed, text):
     global current, last
+    voice, speed = validate_settings(voice, speed)
     t0 = time.time()
 
     def mark(label):

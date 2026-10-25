@@ -5,23 +5,39 @@ import sys
 from pathlib import Path
 import shutil
 import ssl
+import tempfile
 import certifi
 import urllib.request
-from huggingface_hub import snapshot_download
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "build-assets"
 TLS = ssl.create_default_context(cafile=certifi.where())
 MODEL_REVISION = "f3ff3571791e39611d31c381e3a41a3af07b4987"
+ESPEAK_LOADER_VERSION = "0.2.4"
+# The upstream 0.2.4 version commit; its build workflow uses eSpeak NG 1.52.0.
+ESPEAK_LOADER_REVISION = "146599e29be31bf17d99f0bcb7dbb2f92aef3d95"
 
 
 def download(url, dest):
-    if not dest.exists():
-        with urllib.request.urlopen(url, timeout=120, context=TLS) as response, dest.open("wb") as output:
-            shutil.copyfileobj(response, output)
+    if dest.exists():
+        return
+    partial = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=dest.parent, prefix=f".{dest.name}.",
+                                         suffix=".part", delete=False) as output:
+            partial = Path(output.name)
+            with urllib.request.urlopen(url, timeout=120, context=TLS) as response:
+                shutil.copyfileobj(response, output)
+        partial.replace(dest)
+    finally:
+        if partial is not None:
+            partial.unlink(missing_ok=True)
 
 
 def main():
+    from huggingface_hub import snapshot_download
+    if metadata.version("espeakng-loader") != ESPEAK_LOADER_VERSION:
+        raise RuntimeError("Update the pinned eSpeak loader source revision for this dependency version.")
     model = ASSETS / "model"
     model.mkdir(parents=True, exist_ok=True)
     snapshot_download("hexgrad/Kokoro-82M", revision=MODEL_REVISION, local_dir=model,
@@ -69,7 +85,11 @@ def main():
     # espeakng-loader 0.2.4 builds unmodified eSpeak NG 1.52.0. Include its
     # corresponding source and the loader's build instructions with the binary.
     download("https://github.com/espeak-ng/espeak-ng/archive/refs/tags/1.52.0.tar.gz", sources / "espeak-ng-1.52.0.tar.gz")
-    download("https://raw.githubusercontent.com/thewh1teagle/espeakng-loader/main/build.sh", sources / "espeakng-loader-build.sh")
+    # Discard caches from the old, moving-main URLs.
+    for legacy in ("espeakng-loader-build.sh", "espeakng-loader-source.tar.gz"):
+        (sources / legacy).unlink(missing_ok=True)
+    download(f"https://raw.githubusercontent.com/thewh1teagle/espeakng-loader/{ESPEAK_LOADER_REVISION}/build.sh",
+             sources / f"espeakng-loader-{ESPEAK_LOADER_REVISION}-build.sh")
     for package in ("phonemizer-fork", "espeakng-loader"):
         version = metadata.version(package)
         with urllib.request.urlopen(f"https://pypi.org/pypi/{package}/{version}/json", timeout=60, context=TLS) as response:
@@ -79,14 +99,16 @@ def main():
             item = distributions[0]
             download(item['url'], sources / item['filename'])
         elif package == 'espeakng-loader':
-            download("https://github.com/thewh1teagle/espeakng-loader/archive/refs/heads/main.tar.gz", sources / "espeakng-loader-source.tar.gz")
+            download(f"https://github.com/thewh1teagle/espeakng-loader/archive/{ESPEAK_LOADER_REVISION}.tar.gz",
+                     sources / f"espeakng-loader-{ESPEAK_LOADER_REVISION}-source.tar.gz")
         else:
             raise RuntimeError(f"Missing corresponding source for {package} {version}")
     (notices / "README.txt").write_text(
         "Speak Kokoro includes third-party software with separate licenses.\n"
         "See the notices in this folder and dependencies.json for versions.\n"
         "The sources folder includes eSpeak NG and phonemizer source archives.\n"
-        f"Kokoro-82M model revision: {MODEL_REVISION}; model license: Apache-2.0.\n", encoding="utf-8")
+        f"Kokoro-82M model revision: {MODEL_REVISION}; model license: Apache-2.0.\n"
+        f"eSpeak loader {ESPEAK_LOADER_VERSION} source revision: {ESPEAK_LOADER_REVISION}.\n", encoding="utf-8")
     print(f"Prepared model, {len(list((model / 'voices').glob('*.pt')))} voices, and dependency notices.")
 
 

@@ -10,9 +10,9 @@ Preview installers are built by the [Desktop installers workflow](https://github
 
 | Computer | Installer | Requirements |
 |---|---|---|
-| Mac with Apple Silicon | `speak-kokoro-0.4.0-macos-arm64.pkg` | macOS 14 or later |
-| Windows PC | `speak-kokoro-0.4.0-windows-x64-setup.exe` | Windows 10 or 11, x64 |
-| Ubuntu or Debian PC | `speak-kokoro-0.4.0-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
+| Mac with Apple Silicon | `speak-kokoro-0.4.1-macos-arm64.pkg` | macOS 14 or later |
+| Windows PC | `speak-kokoro-0.4.1-windows-x64-setup.exe` | Windows 10 or 11, x64 |
+| Ubuntu or Debian PC | `speak-kokoro-0.4.1-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
 
 Intel Macs, Windows ARM, and other Linux package formats do not have installer builds yet. [Source installation](docs/source-install.md) remains available where the dependencies support your system.
 
@@ -52,7 +52,7 @@ If Windows shows an unrecognized-app warning, check that this is the preview ins
 Open a terminal in the folder containing the downloaded `.deb`, then run:
 
 ```sh
-sudo apt install ./speak-kokoro-0.4.0-linux-amd64.deb
+sudo apt install ./speak-kokoro-0.4.1-linux-amd64.deb
 ```
 
 Open **Speak Kokoro** from your applications menu. Select text in your document, then click **Read selection** on the floating toolbar. You can also open the toolbar with `speak-kokoro --gui`.

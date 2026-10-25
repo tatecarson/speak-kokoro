@@ -58,7 +58,8 @@ def main():
             'Section: sound\nPriority: optional\n'
             'Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libasound2\n'
             'Description: Local text-to-speech with bundled Python and Kokoro model\n', encoding='utf-8')
-        run('dpkg-deb', '--root-owner-group', '--build', stage, OUT / f'speak-kokoro-{VERSION}-linux-amd64.deb')
+        run('dpkg-deb', '-Zgzip', '-z6', '--root-owner-group', '--build', stage,
+            OUT / f'speak-kokoro-{VERSION}-linux-amd64.deb')
     print('Installers:', *OUT.iterdir(), sep='\n')
 
 

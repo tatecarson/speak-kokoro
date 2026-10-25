@@ -78,7 +78,10 @@ def configure_espeak():
     # The packaged app includes the same eSpeak library and data used by Misaki.
     if BUNDLE:
         import espeakng_loader
-        return espeakng_loader.get_library_path()
+        library = espeakng_loader.get_library_path()
+        os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = library
+        os.environ["PHONEMIZER_ESPEAK_DATA_PATH"] = espeakng_loader.get_data_path()
+        return library
     candidates = []
     if WINDOWS:
         for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):

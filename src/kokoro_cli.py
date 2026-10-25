@@ -148,6 +148,9 @@ def main(argv=None):
     except KeyboardInterrupt:
         return 130
     except Exception as exc:
+        if args.self_test:
+            import traceback
+            traceback.print_exc()
         print(f"speak-kokoro: {exc}", file=sys.stderr)
         return 1
 

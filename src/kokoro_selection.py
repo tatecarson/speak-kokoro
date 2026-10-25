@@ -90,6 +90,8 @@ def protect_document_focus(window):
     user.CallWindowProcW.argtypes = [ctypes.c_void_p, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
     user.CallWindowProcW.restype = ctypes.c_ssize_t
     handle = user.GetParent(window.winfo_id())
+    if not handle:
+        raise OSError('Could not create the selection toolbar window.')
     style = user.GetWindowLongPtrW(handle, -20)
     user.SetWindowLongPtrW(handle, -20, style | 0x08000000)  # WS_EX_NOACTIVATE
     callback_type = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)

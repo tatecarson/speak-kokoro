@@ -214,7 +214,6 @@ class ReaderWindow:
             ttk.Button(frame, text="Settings & text…", takefocus=False,
                        command=self.show_reader).pack(anchor="e")
             panel.update_idletasks()
-            protect_document_focus(panel)
             panel.geometry(f"+{max(0, panel.winfo_screenwidth()-panel.winfo_reqwidth()-40)}+60")
             self.root.protocol("WM_DELETE_WINDOW", self.show_toolbar)
             menu = tk.Menu(self.root, tearoff=False)
@@ -223,6 +222,10 @@ class ReaderWindow:
             self.root.configure(menu=menu)
         self.root.withdraw()
         self.toolbar.deiconify()
+        self.toolbar.update_idletasks()
+        if not hasattr(self.toolbar, "_selection_wndproc"):
+            from kokoro_selection import protect_document_focus
+            protect_document_focus(self.toolbar)
         self.status.set("Select text in your document, then click Read selection." if not self.active and not self.loading else self.status.get())
         self._buttons()
 

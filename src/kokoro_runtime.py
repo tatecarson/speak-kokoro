@@ -5,8 +5,10 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import sys
+import tempfile
 
 WINDOWS = sys.platform == "win32"
 HOME_DIR = Path.home()
@@ -23,6 +25,7 @@ SPEAKING_FLAG = RUNTIME_DIR / "speaking"
 LOG = RUNTIME_DIR / "daemon.log"
 MAX_REQUEST = 4 * 1024 * 1024
 BUNDLE = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else None
+_ESPEAK_TEMP = None
 
 
 def configure_audio():
@@ -73,15 +76,26 @@ def prepare_runtime():
 
 def configure_espeak():
     """Find common eSpeak library locations without changing the user's PATH."""
-    if os.environ.get("PHONEMIZER_ESPEAK_LIBRARY"):
-        return os.environ["PHONEMIZER_ESPEAK_LIBRARY"]
     # The packaged app includes the same eSpeak library and data used by Misaki.
     if BUNDLE:
+        global _ESPEAK_TEMP
         import espeakng_loader
         library = espeakng_loader.get_library_path()
+        data = Path(espeakng_loader.get_data_path()).resolve()
+        # eSpeak 1.52 has a 160-byte data-path buffer. Relocated Mac bundles
+        # and deeply nested Windows installs can exceed it. A symlink would
+        # not help because phonemizer resolves paths before loading eSpeak.
+        if len(os.fsencode(data)) >= 140:
+            _ESPEAK_TEMP = tempfile.TemporaryDirectory(prefix="kokoro-espeak-")
+            short_data = Path(_ESPEAK_TEMP.name) / "espeak-ng-data"
+            shutil.copytree(data, short_data)
+            data = short_data
+            espeakng_loader.get_data_path = lambda: str(short_data)
         os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = library
-        os.environ["PHONEMIZER_ESPEAK_DATA_PATH"] = espeakng_loader.get_data_path()
+        os.environ["PHONEMIZER_ESPEAK_DATA_PATH"] = str(data)
         return library
+    if os.environ.get("PHONEMIZER_ESPEAK_LIBRARY"):
+        return os.environ["PHONEMIZER_ESPEAK_LIBRARY"]
     candidates = []
     if WINDOWS:
         for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):

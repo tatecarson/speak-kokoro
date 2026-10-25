@@ -27,7 +27,8 @@ def start_daemon(voice, timeout=600):
     with FileLock(str(runtime.RUNTIME_DIR / "startup.lock"), timeout=timeout):
         if runtime.running():
             return
-        print("Loading Kokoro. The first run may download model and language files; please wait.", file=sys.stderr)
+        print("Loading Kokoro. Please wait." if runtime.BUNDLE else
+              "Loading Kokoro. The first run may download model and language files; please wait.", file=sys.stderr)
         env = dict(os.environ, VOICE=voice, PYINSTALLER_RESET_ENVIRONMENT="1")
         kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if runtime.WINDOWS else {"start_new_session": True}
         with runtime.LOG.open("a", encoding="utf-8") as log:
@@ -80,7 +81,7 @@ def main(argv=None):
         "stop": "Stop reading", "toggle": "Pause or resume; replay the last text if idle",
         "next": "Next sentence", "prev": "Previous sentence", "quit": "Unload the model",
         "voices": "List available voices" + ("" if runtime.BUNDLE else ", requires internet"), "doctor": "Check eSpeak and audio setup",
-        "download": "Download and test the selected voice without playing audio",
+        "download": ("Test" if runtime.BUNDLE else "Download and test") + " the selected voice without playing audio",
         "self-test": "Check bundled speech generation without playing audio",
         "status": "Show whether the model is running", "paths": "Show settings and log paths",
     }.items():

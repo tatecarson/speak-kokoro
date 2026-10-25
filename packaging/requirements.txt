@@ -3,4 +3,6 @@ pyinstaller-hooks-contrib>=2025.9
 espeakng-loader==0.2.4
 phonemizer-fork==3.3.2
 spacy>=3.8,<3.9
+# 3.0.14 raises OverflowError when spaCy clears unsigned tokenizer hashes.
+preshed==3.0.13
 en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

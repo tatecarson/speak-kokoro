@@ -13,7 +13,6 @@ Protocol over a unix socket, one message per request:
 Exits after IDLE_TIMEOUT seconds with no requests.
 """
 import atexit
-import fcntl
 import json
 import os
 import re
@@ -26,17 +25,18 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-SOCKET = "/tmp/kokoro-tts.sock"
-SPEAKING_FLAG = "/tmp/kokoro-speaking"
-LEXICON = os.path.expanduser("~/.config/kokoro-lexicon.json")
-LOCKFILE = "/tmp/kokoro-daemon.lock"
+import kokoro_runtime as runtime
+from kokoro_runtime import SOCKET, SPEAKING_FLAG, LEXICON
+from kokoro_cli import validate_settings
+from filelock import FileLock, Timeout
+
+runtime.configure_espeak()
 IDLE_TIMEOUT = float(os.environ.get("KOKORO_IDLE_TIMEOUT", 10800))
 SR = 24000
 TIMING = bool(os.environ.get("KOKORO_TIMING"))
 
 import numpy as np
 import sounddevice as sd
-from kokoro import KPipeline
 
 # Pause inserted after a chunk, by the punctuation that ended it. Kokoro bakes
 # ~0.78s of silence into every chunk; we strip that and put back something
@@ -117,8 +117,12 @@ def user_lexicon():
         return _lexicon["data"]
     if _lexicon["mtime"] != mtime:
         try:
-            with open(LEXICON) as fh:
+            with open(LEXICON, encoding="utf-8-sig") as fh:
                 loaded = json.load(fh)
+            if not isinstance(loaded, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in loaded.items()
+            ):
+                raise ValueError("expected an object mapping words to phoneme strings")
             _lexicon["data"] = {k: v for k, v in loaded.items()
                                 if not k.startswith("_")}
             _lexicon["mtime"] = mtime
@@ -129,7 +133,11 @@ def user_lexicon():
 
 
 def apply_lexicon(pipeline):
-    golds = pipeline.g2p.lexicon.golds
+    # Only the English front end has this pronunciation dictionary.
+    lexicon = getattr(pipeline.g2p, "lexicon", None)
+    golds = getattr(lexicon, "golds", None)
+    if golds is None:
+        return
     for word, phonemes in user_lexicon().items():
         # misaki looks up case variants separately, so a sentence-initial
         # capital would otherwise still hit the entry we are overriding.
@@ -232,8 +240,7 @@ def get_pipeline(lang):
     """
     if lang not in pipelines:
         shared = next(iter(pipelines.values()), None)
-        pipelines[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M",
-                                    model=shared.model if shared else True)
+        pipelines[lang] = runtime.make_pipeline(lang, shared.model if shared else None)
     return pipelines[lang]
 
 
@@ -324,6 +331,7 @@ class Session:
 
     def configure(self, voice, speed):
         """Switch voice or speed, re-reading the current sentence with it."""
+        voice, speed = validate_settings(voice, speed)
         with self.cond:
             if (voice, speed) == (self.voice, self.speed):
                 return
@@ -348,7 +356,7 @@ class Session:
         pause = PAUSE.get(raw[-1:], DEFAULT_PAUSE)
         if i == len(self.spans) - 1:
             pause = 0.0
-        for result in pipeline(clean(raw), voice=voice, speed=speed):
+        for result in pipeline(clean(raw), voice=runtime.voice_path(voice), speed=speed):
             audio, cut = trim(result.audio)
             for tok in result.tokens or ():
                 if tok.start_ts is None or not any(c.isalnum() for c in tok.text):
@@ -372,6 +380,14 @@ class Session:
         return samples, words
 
     def produce(self, mark):
+        try:
+            self._produce(mark)
+        except Exception as exc:
+            self.event("error", message=str(exc))
+            self.end()
+            print(f"Speech generation failed: {exc}", file=sys.stderr)
+
+    def _produce(self, mark):
         """Keep the next few sentences from the play head synthesized."""
         while True:
             with self.cond:
@@ -398,11 +414,11 @@ class Session:
     # --- playback -------------------------------------------------------
     def run(self, mark):
         self.event("start", text=self.text, spans=self.spans)
-        threading.Thread(target=self.produce, args=(mark,), daemon=True).start()
-        stream = get_stream()
-        open(SPEAKING_FLAG, "w").close()      # menu bar reads this for its icon
         first = True
         try:
+            stream = get_stream()
+            threading.Thread(target=self.produce, args=(mark,), daemon=True).start()
+            open(SPEAKING_FLAG, "w").close()      # menu bar reads this for its icon
             while True:
                 with self.cond:
                     while not self.done and self.pos < len(self.spans) and (
@@ -422,6 +438,9 @@ class Session:
                     if self.jumps == jumps and self.pos == i:
                         self.pos += 1
                         self.cond.notify_all()      # wake the producer
+        except Exception as exc:
+            self.event("error", message=str(exc))
+            print(f"Playback failed: {exc}", file=sys.stderr)
         finally:
             with self.cond:
                 self.done = True
@@ -473,6 +492,7 @@ class Session:
 
 def speak(voice, speed, text):
     global current, last
+    voice, speed = validate_settings(voice, speed)
     t0 = time.time()
 
     def mark(label):
@@ -504,12 +524,19 @@ def stop():
         session.end()
 
 
-def handle(conn):
+def handle(conn, token=None):
     global last_used
-    data = b""
-    while chunk := conn.recv(65536):
-        data += chunk
-    msg = data.decode("utf-8", "replace")
+    try:
+        msg = runtime.receive(conn, token)
+    except (OSError, ValueError):
+        conn.close()
+        return
+    if msg == "PING":
+        try:
+            conn.sendall(b"OK")
+        finally:
+            conn.close()
+        return
     last_used = time.time()
     if msg.startswith("WATCH"):
         with state_lock:
@@ -519,6 +546,7 @@ def handle(conn):
             try:
                 for event in session.snapshot() if session else ():
                     conn.sendall((json.dumps(event) + "\n").encode())
+                conn.sendall(b'{"ev":"ready"}\n')
             except OSError:
                 conn.close()
                 return
@@ -527,6 +555,10 @@ def handle(conn):
     conn.close()
     with state_lock:
         session = current if current and not current.done else None
+    if msg == "QUIT":
+        stop()
+        cleanup()
+        os._exit(0)
     if msg.startswith("STOP"):
         stop()
     elif msg.startswith("TOGGLE"):
@@ -555,17 +587,12 @@ def reaper():
 
 
 def single_instance():
-    """Refuse to start if another daemon holds the lock.
-
-    Without this, a second daemon would unlink the first one's socket, bind its
-    own, and leave two copies of a 1.5 GB model resident with the first
-    orphaned. flock is released by the kernel on death, so there is no stale
-    lock to clear even after a force quit.
-    """
-    lock = open(LOCKFILE, "w")
+    """An OS-backed lock is released even if the daemon is force-quit."""
+    runtime.prepare_runtime()
+    lock = FileLock(str(runtime.RUNTIME_DIR / "daemon.lock"))
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+        lock.acquire(timeout=0)
+    except Timeout:
         raise SystemExit("kokoro daemon already running")
     return lock
 
@@ -579,7 +606,7 @@ def cleanup():
         except Exception:
             pass
         _stream = None
-    for path in (SOCKET, SPEAKING_FLAG):
+    for path in (SOCKET, runtime.ENDPOINT, SPEAKING_FLAG):
         try:
             os.unlink(path)
         except OSError:
@@ -589,23 +616,21 @@ def cleanup():
 def main():
     lock = single_instance()          # noqa: F841  (held for process lifetime)
     atexit.register(cleanup)
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(sig, lambda *_: (cleanup(), os._exit(0)))
-    if os.path.exists(SOCKET):
-        os.unlink(SOCKET)
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(SOCKET)
-    srv.listen(8)
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), lambda *_: (cleanup(), os._exit(0)))
     warm = os.environ.get("VOICE", "af_heart")
     pl = get_pipeline(warm[0])
-    for _ in pl("Ready.", voice=warm, speed=1.0):     # force first inference
+    for _ in pl("Ready.", voice=runtime.voice_path(warm), speed=1.0):     # force first inference
         break
+    # Publish an endpoint only after model download and warm-up succeed.
+    srv, token = runtime.listen()
     sys.stderr.write("kokoro daemon ready\n")
     sys.stderr.flush()
     threading.Thread(target=reaper, daemon=True).start()
     while True:
         conn, _ = srv.accept()
-        threading.Thread(target=handle, args=(conn,), daemon=True).start()
+        threading.Thread(target=handle, args=(conn, token), daemon=True).start()
 
 
 if __name__ == "__main__":

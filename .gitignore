@@ -1,3 +1,10 @@
 __pycache__/
 *.pyc
 .DS_Store
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+build-assets/
+installers/

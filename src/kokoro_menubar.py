@@ -7,6 +7,7 @@ synthesis daemon over its unix socket. The heavy model stays on demand.
 import fcntl
 import json
 import os
+import plistlib
 import socket
 import subprocess
 import threading
@@ -21,9 +22,11 @@ from PyObjCTools import AppHelper
 
 import kokoro_player
 
-SOCK = "/tmp/kokoro-tts.sock"
-CONF = os.path.expanduser("~/.config/kokoro-tts.conf")
-SPEAK = os.path.expanduser("~/.local/bin/speak-kokoro")
+import kokoro_runtime as runtime
+
+SOCK = str(runtime.SOCKET)
+CONF = str(runtime.CONF)
+SPEAK = runtime.client_command()
 AGENT = os.path.expanduser("~/Library/LaunchAgents/com.tatecarson.kokoro-tts.plist")
 
 IDLE, BUSY = "○)", "●)"     # ○) and ●)
@@ -83,7 +86,7 @@ def show_shortcut(item, service_name):
 def read_conf():
     cfg = {"VOICE": "af_heart", "SPEED": "1.0", "CONTROLS": "1", "HIGHLIGHT": "1"}
     try:
-        with open(CONF) as fh:
+        with open(CONF, encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -96,7 +99,7 @@ def read_conf():
 
 def write_conf(cfg):
     os.makedirs(os.path.dirname(CONF), exist_ok=True)
-    with open(CONF, "w") as fh:
+    with open(CONF, "w", encoding="utf-8") as fh:
         fh.write("# Voice and speed for speak-kokoro. Managed by the menu bar app.\n")
         fh.write(f"VOICE={cfg['VOICE']}\nSPEED={cfg['SPEED']}\n")
         fh.write(f"CONTROLS={cfg['CONTROLS']}\nHIGHLIGHT={cfg['HIGHLIGHT']}\n")
@@ -114,15 +117,12 @@ def send(cmd):
 
 
 def daemon_loaded():
-    return os.path.exists(SOCK) and bool(
-        subprocess.run(["pgrep", "-f", "kokoro_daemon.py"],
-                       capture_output=True).stdout.strip()
-    )
+    return runtime.running()
 
 
 def speaking():
     """The daemon writes this flag while audio is actually playing."""
-    return os.path.exists("/tmp/kokoro-speaking") and daemon_loaded()
+    return runtime.SPEAKING_FLAG.exists() and daemon_loaded()
 
 
 def clipboard_text():
@@ -205,7 +205,7 @@ class KokoroApp(rumps.App):
         self.mark_checks()
 
     def say(self, text):
-        subprocess.run([SPEAK, text])
+        subprocess.run(SPEAK + [text])
 
     def speak_clipboard(self, _):
         text = clipboard_text().strip()
@@ -217,12 +217,12 @@ class KokoroApp(rumps.App):
         threading.Thread(target=self.say, args=(text,), daemon=True).start()
 
     def stop(self, _):
-        subprocess.run([SPEAK, "--stop"])
+        subprocess.run(SPEAK + ["--stop"])
 
     def unload(self, _):
         if self.loading:
             return
-        subprocess.run([SPEAK, "--quit"])
+        subprocess.run(SPEAK + ["--quit"])
 
     def preload(self, _):
         # Loading takes ~5 s, far longer than the 1 s state poll, so disable the
@@ -293,22 +293,14 @@ class KokoroApp(rumps.App):
             time.sleep(1)
 
 
-PLIST = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.tatecarson.kokoro-tts</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{os.path.expanduser('~/.local/share/kokoro-venv/bin/python')}</string>
-        <string>{os.path.expanduser('~/.local/share/kokoro-venv/kokoro_menubar.py')}</string>
-    </array>
-    <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
-    <key>StandardErrorPath</key><string>/tmp/kokoro-menubar.log</string>
-</dict>
-</plist>
-"""
+PLIST = plistlib.dumps({
+    "Label": "com.tatecarson.kokoro-tts",
+    "ProgramArguments": runtime.menu_command(),
+    "RunAtLoad": True,
+    "KeepAlive": True,
+    "StandardErrorPath": str(runtime.RUNTIME_DIR / "menubar.log"),
+}).decode("utf-8")
+
 
 def _single_instance():
     """Abort if another copy is already in the menu bar.
@@ -325,8 +317,13 @@ def _single_instance():
     return lock
 
 
-if __name__ == "__main__":
+def main():
+    runtime.prepare_runtime()
     _lock = _single_instance()
     NSApplication.sharedApplication().setActivationPolicy_(
         NSApplicationActivationPolicyAccessory)      # no Dock icon
     KokoroApp().run()
+
+
+if __name__ == "__main__":
+    main()

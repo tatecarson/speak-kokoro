@@ -1,6 +1,7 @@
 """Wrap the tested PyInstaller bundle in the native desktop installer."""
 from pathlib import Path
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -27,7 +28,17 @@ def main():
         bin_dir = stage / 'usr/local/bin'
         bin_dir.mkdir(parents=True)
         (bin_dir / 'speak-kokoro').symlink_to('/Applications/Speak Kokoro.app/Contents/MacOS/speak-kokoro')
+        # Without this, Installer may find the build copy of the app (or a
+        # system Python.framework) and relocate our payload there instead.
+        components = ROOT / 'build/components.plist'
+        run('pkgbuild', '--analyze', '--root', stage, components)
+        bundles = plistlib.loads(components.read_bytes())
+        for bundle in bundles:
+            bundle['BundleIsRelocatable'] = False
+            bundle['BundleIsVersionChecked'] = False
+        components.write_bytes(plistlib.dumps(bundles))
         run('pkgbuild', '--root', stage, '--identifier', 'com.tatecarson.speak-kokoro',
+            '--component-plist', components,
             '--version', VERSION, '--install-location', '/',
             OUT / f'speak-kokoro-{VERSION}-macos-{platform.machine()}.pkg')
     elif sys.platform == 'win32':

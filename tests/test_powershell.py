@@ -25,7 +25,8 @@ class PowerShellTests(unittest.TestCase):
         shells = [shutil.which(name) for name in ('powershell.exe', 'pwsh.exe')]
         self.assertTrue(all(shells), 'CI must exercise Windows PowerShell and PowerShell 7')
         with tempfile.TemporaryDirectory(prefix='kokoro powershell ') as temporary:
-            folder = Path(temporary)
+            # PowerShell expands Windows 8.3 aliases such as RUNNER~1.
+            folder = Path(temporary).resolve()
             (folder/'py.cmd').write_text(LAUNCHER)
             for name in ('install.ps1', 'uninstall.ps1'):
                 shutil.copy2(ROOT/name, folder/name)

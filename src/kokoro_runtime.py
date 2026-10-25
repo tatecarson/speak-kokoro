@@ -41,6 +41,10 @@ def client_command():
 
 
 def daemon_command():
+    if BUNDLE and WINDOWS:
+        # The desktop launcher is windowed; background work uses the console
+        # executable with CREATE_NO_WINDOW so logs remain available.
+        return [str(Path(sys.executable).with_name("speak-kokoro.exe")), "--daemon"]
     return [sys.executable, "--daemon"] if BUNDLE else [sys.executable, "-m", "kokoro_daemon"]
 
 
@@ -122,6 +126,36 @@ def read_config():
     for key in cfg:
         cfg[key] = os.environ.get(key, cfg[key])
     return cfg
+
+
+def save_settings(voice, speed):
+    """Update reader preferences atomically, preserving other settings."""
+    from kokoro_cli import validate_settings
+    voice, speed = validate_settings(voice, speed)
+    updates = {"VOICE": voice, "SPEED": f"{speed:g}"}
+    try:
+        lines = CONF.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        lines = []
+    output = []
+    for line in lines:
+        key = line.partition("=")[0].strip()
+        if key in updates:
+            output.append(f"{key}={updates.pop(key)}")
+        elif key not in ("VOICE", "SPEED"):
+            output.append(line)
+    output.extend(f"{key}={value}" for key, value in updates.items())
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=CONF.parent,
+                                         prefix=".kokoro-", delete=False) as file:
+            temporary = Path(file.name)
+            file.write("\n".join(output) + "\n")
+        temporary.replace(CONF)
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
 
 
 def listen():

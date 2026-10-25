@@ -8,9 +8,11 @@ The `Desktop installers` GitHub Actions workflow builds three packages from the 
 
 Each job relocates its frozen application into a directory containing spaces, sets an empty Hugging Face cache and offline mode, generates real speech without audio playback, and checks daemon startup/shutdown. It then installs the native package on the runner and tests the installed executable. Windows and Linux also test uninstall. CI has no physical speakers, so audible playback and Mac Accessibility still need manual checks.
 
+Windows and Linux also open real Tk windows and exercise their buttons, preference saving, Unicode highlighting, error state, and close behavior. Linux uses Xvfb for these checks. The Windows check covers both the console executable and the windowed launcher. Controller integration tests use the real daemon with fake audio hardware to test read, pause, resume, settings, cancellation, and failure reporting.
+
 ## Build locally
 
-Build on the target OS with 64-bit Python 3.12 and a clean virtual environment. Windows needs Inno Setup 6. Linux needs `libportaudio2` and `dpkg-deb`. On Linux and Windows, install CPU PyTorch first:
+Build on the target OS with 64-bit Python 3.12 and a clean virtual environment. Windows needs Inno Setup 6. Linux needs `libportaudio2`, `tk8.6`, `dpkg-deb`, and a Python build with Tkinter. Headless GUI tests need `xvfb` and `xauth`; use `xvfb-run -a python packaging/smoke.py`. On Linux and Windows, install CPU PyTorch first:
 
 ```sh
 python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -29,6 +31,8 @@ python packaging/package.py
 Installers appear in `installers/`. The model and voice files are fetched at a fixed Hugging Face revision during the build and read directly from the installed bundle at runtime. The English spaCy model is included as a package with its metadata, preventing spaCy from attempting a runtime pip installation. The bundled eSpeak library and its pronunciation data come from `espeakng-loader`.
 
 The executable dispatches `--daemon` to the background server rather than treating itself as a Python interpreter. Mac app launch opens the existing menu bar; terminal commands use the same executable. macOS Services are installed for the current user on first app launch, and the login item points at the packaged executable.
+
+Windows has a separate `Speak Kokoro.exe` windowed launcher sharing the console executable's libraries. Its daemon uses `speak-kokoro.exe` with a hidden console, preserving logging without flashing terminal windows. Linux installs a `.desktop` application-menu entry and icon. Tk and Tcl are bundled by PyInstaller; their license notices are included.
 
 ## Distribution
 

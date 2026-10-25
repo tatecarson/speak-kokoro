@@ -2,7 +2,7 @@
 
 Read text aloud on your own computer with Kokoro. No account, API key, subscription, or separate Python installation is needed when you use a packaged installer. The speech model, all 54 voice files, English language data, and audio libraries are included. Your text stays on your computer, and English speech works offline.
 
-Mac includes a menu bar app, reading panel, and selection shortcuts. Windows and Linux currently use terminal commands. A graphical interface for those systems is separate work.
+Windows and Linux include a desktop reading window. Paste text or open a text file, choose a voice, and listen with word highlighting and playback controls. Mac includes its menu bar app, reading panel, and selection shortcuts.
 
 ## Download an installer
 
@@ -10,9 +10,9 @@ Preview installers are built by the [Desktop installers workflow](https://github
 
 | Computer | Installer | Requirements |
 |---|---|---|
-| Mac with Apple Silicon | `speak-kokoro-0.2.0-macos-arm64.pkg` | macOS 14 or later |
-| Windows PC | `speak-kokoro-0.2.0-windows-x64-setup.exe` | Windows 10 or 11, x64 |
-| Ubuntu or Debian PC | `speak-kokoro-0.2.0-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
+| Mac with Apple Silicon | `speak-kokoro-0.3.0-macos-arm64.pkg` | macOS 14 or later |
+| Windows PC | `speak-kokoro-0.3.0-windows-x64-setup.exe` | Windows 10 or 11, x64 |
+| Ubuntu or Debian PC | `speak-kokoro-0.3.0-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
 
 Intel Macs, Windows ARM, and other Linux package formats do not have installer builds yet. [Source installation](docs/source-install.md) remains available where the dependencies support your system.
 
@@ -39,20 +39,11 @@ If macOS blocks an unsigned preview after you try to open it, review **System Se
 ### Windows
 
 1. Open the setup `.exe` and follow the installer. It installs for your user account; a separate Python or eSpeak installation is unnecessary.
-2. Open **Speak Kokoro terminal** from the Start menu. This opens a command window in the installed app's folder and displays help.
-3. Type:
+2. Open **Speak Kokoro** from the Start menu. A reading window opens without a terminal.
+3. Type a sentence, or choose **Paste text** to use text you copied.
+4. Choose **Read aloud**. Use **Pause**, **Resume**, and **Stop** to control playback.
 
-   ```text
-   speak-kokoro "Hello! Kokoro is ready."
-   ```
-
-4. To stop reading, type:
-
-   ```text
-   speak-kokoro --stop
-   ```
-
-Use the Start menu terminal for these commands. The installer does not change your global PATH. The default app location is `%LOCALAPPDATA%\Programs\Speak Kokoro`.
+The default app location is `%LOCALAPPDATA%\Programs\Speak Kokoro`. **Speak Kokoro terminal** remains available in the Start menu for optional command-line use; the installer does not change your global PATH.
 
 If Windows shows an unrecognized-app warning, check that this is the preview installer you intended to download before approving it.
 
@@ -61,11 +52,24 @@ If Windows shows an unrecognized-app warning, check that this is the preview ins
 Open a terminal in the folder containing the downloaded `.deb`, then run:
 
 ```sh
-sudo apt install ./speak-kokoro-0.2.0-linux-amd64.deb
-speak-kokoro "Hello! Kokoro is ready."
+sudo apt install ./speak-kokoro-0.3.0-linux-amd64.deb
 ```
 
-`apt` may download standard system audio dependencies if they are missing. Speech itself works offline after installation. Use a desktop session with working speakers or headphones.
+Open **Speak Kokoro** from your applications menu, paste or type a sentence, and choose **Read aloud**. You can also open the window with `speak-kokoro --gui`.
+
+`apt` may download standard system audio and display dependencies if they are missing. Speech itself works offline after installation. Use a graphical desktop session with working speakers or headphones. On Wayland desktops, the Tk window uses XWayland.
+
+## Use the Windows or Linux reading window
+
+- **Paste text** replaces the text area with your clipboard text. **Open text file** loads a plain UTF-8 `.txt` or `.md` file.
+- **Read aloud** starts a new reading. The first reading takes longer while the voice loads; **Stop** also cancels loading.
+- **Pause / Resume**, **Previous**, and **Next** control playback. Words are highlighted as they are read. If you edit the text while listening, highlighting stops until you read the edited text.
+- **Voice** and **Speed** are saved automatically. Changing them during playback restarts the current sentence with the new settings.
+- **Help** shows keyboard shortcuts, audio troubleshooting, and the diagnostic log.
+
+Press **Ctrl+Enter** to read, **Esc** to stop, or **Ctrl+O** to open a text file. Closing the window stops playback and unloads the model. The app does not save the text you paste or type.
+
+The desktop voice picker includes English, Spanish, French, Hindi, Italian, and Portuguese voices. It does not add global selection shortcuts or a system tray icon on Windows or Linux.
 
 ## Everyday commands
 
@@ -81,13 +85,14 @@ speak-kokoro --prev
 speak-kokoro --quit
 speak-kokoro --voices
 speak-kokoro --help
+speak-kokoro --gui
 ```
 
 Put the reading text in quotes. A new reading interrupts the previous one. The terminal command returns while speech continues in the background.
 
 `--toggle` pauses or resumes, or replays the previous reading if it has ended. `--next` and `--prev` navigate sentences. `--quit` stops the background model and frees its memory. The next reading loads it again. By default, it unloads after three hours without a playback command.
 
-The default voice is `af_heart`. Try `am_michael` for another American English voice, or `bf_emma` and `bm_george` for British English. Speeds from `0.5` to `2.0` are accepted. Run `--paths` to locate your saved settings and pronunciation corrections. Mac users can save voice and speed in the reading panel.
+The default voice is `af_heart`. Try `am_michael` for another American English voice, or `bf_emma` and `bm_george` for British English. Speeds from `0.5` to `2.0` are accepted. Run `--paths` to locate your saved settings and pronunciation corrections. You can also save voice and speed in the desktop window or Mac reading panel.
 
 The installers include the English and eSpeak pronunciation engines. Although all voice files are present, Japanese and Mandarin need additional language engines and currently require a [source installation](docs/source-install.md#voice-speed-and-languages).
 
@@ -109,7 +114,7 @@ If the model fails to start, open the log shown by `--paths`. [Report a problem]
 
 ## Update and uninstall
 
-Install a newer package over the existing version to update. Stop speech and quit the Mac menu bar app first. Your voice settings and pronunciation corrections are kept.
+Install a newer package over the existing version to update. Close the reading window, stop speech, and quit the Mac menu bar app first. Your voice settings and pronunciation corrections are kept.
 
 - **Windows:** use **Settings > Apps > Installed apps > Speak Kokoro > Uninstall**, or its Start menu uninstaller.
 - **Linux:** run `speak-kokoro --quit`, then `sudo apt remove speak-kokoro`.

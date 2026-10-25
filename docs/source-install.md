@@ -15,7 +15,7 @@ The command-line app runs on **macOS, Windows, and Linux**. On Mac, it also incl
 | Use the included selection shortcuts and reading panel | Yes | No | No |
 | Highlight words in another app | With Accessibility permission | No | No |
 
-Windows and Linux currently use a terminal. There is no Windows or Linux tray app or automatic selection hotkey.
+Windows and Linux can open the reading window with `speak-kokoro --gui` after source installation. Your Python installation needs Tkinter; on Ubuntu/Debian, install the matching `python3-tk` package. The packaged installers include the window and its dependencies. There is no Windows or Linux tray app or automatic selection hotkey.
 
 ## Before you start
 

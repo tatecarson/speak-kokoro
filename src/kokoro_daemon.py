@@ -378,6 +378,14 @@ class Session:
         return samples, words
 
     def produce(self, mark):
+        try:
+            self._produce(mark)
+        except Exception as exc:
+            self.event("error", message=str(exc))
+            self.end()
+            print(f"Speech generation failed: {exc}", file=sys.stderr)
+
+    def _produce(self, mark):
         """Keep the next few sentences from the play head synthesized."""
         while True:
             with self.cond:
@@ -404,11 +412,11 @@ class Session:
     # --- playback -------------------------------------------------------
     def run(self, mark):
         self.event("start", text=self.text, spans=self.spans)
-        threading.Thread(target=self.produce, args=(mark,), daemon=True).start()
-        stream = get_stream()
-        open(SPEAKING_FLAG, "w").close()      # menu bar reads this for its icon
         first = True
         try:
+            stream = get_stream()
+            threading.Thread(target=self.produce, args=(mark,), daemon=True).start()
+            open(SPEAKING_FLAG, "w").close()      # menu bar reads this for its icon
             while True:
                 with self.cond:
                     while not self.done and self.pos < len(self.spans) and (
@@ -428,6 +436,9 @@ class Session:
                     if self.jumps == jumps and self.pos == i:
                         self.pos += 1
                         self.cond.notify_all()      # wake the producer
+        except Exception as exc:
+            self.event("error", message=str(exc))
+            print(f"Playback failed: {exc}", file=sys.stderr)
         finally:
             with self.cond:
                 self.done = True
@@ -532,6 +543,7 @@ def handle(conn, token=None):
             try:
                 for event in session.snapshot() if session else ():
                     conn.sendall((json.dumps(event) + "\n").encode())
+                conn.sendall(b'{"ev":"ready"}\n')
             except OSError:
                 conn.close()
                 return

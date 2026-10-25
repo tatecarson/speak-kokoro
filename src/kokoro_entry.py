@@ -7,6 +7,11 @@ import sys
 
 def main():
     multiprocessing.freeze_support()
+    # PyInstaller's Windows desktop launcher has no attached console.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
     import kokoro_runtime as runtime
     runtime.configure_audio()
     if sys.argv[1:2] == ["--daemon"]:
@@ -29,6 +34,8 @@ def main():
         menubar()
         return 0
     from kokoro_cli import main as cli
+    if len(sys.argv) == 1 and not piped_input:
+        return cli(["--gui"])
     return cli()
 
 

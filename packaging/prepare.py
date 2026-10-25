@@ -52,8 +52,15 @@ def main():
     (notices / "dependencies.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     download(f"https://raw.githubusercontent.com/python/cpython/v{sys.version.split()[0]}/LICENSE",
              notices / "Python-LICENSE.txt")
+    if sys.platform != 'darwin':
+        import tkinter
+        version = tkinter.Tcl().call('info', 'patchlevel')
+        for library in ('tcl', 'tk'):
+            download(f"https://raw.githubusercontent.com/tcltk/{library}/core-{version.replace('.', '-')}/license.terms",
+                     notices / f"{library}-LICENSE.txt")
     if sys.platform.startswith("linux"):
-        for name in ("libportaudio2", "libasound2", "libjack-jackd2-0", "libstdc++6", "libgcc-s1"):
+        for name in ("libportaudio2", "libasound2", "libjack-jackd2-0", "libstdc++6", "libgcc-s1",
+                     "libtcl8.6", "libtk8.6", "libx11-6", "libxft2", "libxrender1", "libfontconfig1", "libfreetype6"):
             copyright_file = Path("/usr/share/doc") / name / "copyright"
             if copyright_file.is_file():
                 shutil.copy2(copyright_file, notices / f"{name}-copyright.txt")

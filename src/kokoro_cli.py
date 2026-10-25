@@ -20,11 +20,13 @@ def validate_settings(voice, speed):
     return voice, speed
 
 
-def start_daemon(voice, timeout=600):
+def start_daemon(voice, timeout=600, cancel_event=None):
     from filelock import FileLock
     runtime.prepare_runtime()
     # Serialize cold starts so concurrent shortcuts cannot load duplicate models.
     with FileLock(str(runtime.RUNTIME_DIR / "startup.lock"), timeout=timeout):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("Loading cancelled")
         if runtime.running():
             return
         print("Loading Kokoro. Please wait." if runtime.BUNDLE else
@@ -37,8 +39,12 @@ def start_daemon(voice, timeout=600):
                                      env=env, **kwargs)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                child.terminate()
+                child.wait(timeout=10)
+                raise InterruptedError("Loading cancelled")
             if runtime.running():
-                return
+                return child
             if child.poll() is not None:
                 raise RuntimeError(f"Kokoro could not start. See {runtime.LOG}")
             time.sleep(0.25)
@@ -77,7 +83,9 @@ def main(argv=None):
     parser.add_argument("--voice", help="Voice ID, such as af_heart or bm_george")
     parser.add_argument("--speed", help="Reading speed, 0.5 to 2.0; default 1.0")
     actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--gui-self-test", action="store_true", help=argparse.SUPPRESS)
     for flag, help_text in {
+        "gui": "Open the desktop reading window",
         "stop": "Stop reading", "toggle": "Pause or resume; replay the last text if idle",
         "next": "Next sentence", "prev": "Previous sentence", "quit": "Unload the model",
         "voices": "List available voices" + ("" if runtime.BUNDLE else ", requires internet"), "doctor": "Check eSpeak and audio setup",
@@ -88,9 +96,18 @@ def main(argv=None):
         actions.add_argument("--" + flag, action="store_true", help=help_text)
     args = parser.parse_args(argv)
     if args.text is not None and any(getattr(args, k) for k in
-                                    ("stop", "toggle", "next", "prev", "quit", "voices", "doctor", "download", "status", "paths", "self_test")):
+                                    ("gui", "gui_self_test", "stop", "toggle", "next", "prev", "quit", "voices", "doctor", "download", "status", "paths", "self_test")):
         parser.error("Use text or an action, not both.")
     try:
+        if args.gui:
+            if sys.platform == "darwin" and runtime.BUNDLE:
+                from kokoro_menubar import main as gui
+            else:
+                from kokoro_gui import main as gui
+            return gui()
+        if args.gui_self_test:
+            from kokoro_gui import self_test
+            return self_test()
         if args.paths:
             print(f"Settings: {runtime.CONF}\nPronunciations: {runtime.LEXICON}\nLog: {runtime.LOG}")
             return 0
@@ -149,7 +166,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         return 130
     except Exception as exc:
-        if args.self_test:
+        if args.self_test or args.gui_self_test:
             import traceback
             traceback.print_exc()
         print(f"speak-kokoro: {exc}", file=sys.stderr)

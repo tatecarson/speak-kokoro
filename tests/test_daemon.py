@@ -69,6 +69,7 @@ class DaemonTests(unittest.TestCase):
                                 time.sleep(0.1)
                                 runtime.send("SAY af_heart 1.0 Hello there. Second sentence.")
                                 with watcher.makefile("rb") as events:
+                                    self.assertEqual(json.loads(events.readline())["ev"], "ready")
                                     self.assertEqual(json.loads(events.readline())["ev"], "start")
                                     runtime.send("STOP")
                                     for _ in range(20):

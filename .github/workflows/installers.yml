@@ -30,20 +30,29 @@ jobs:
           python-version: '3.12'
       - name: Install Linux build libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 tk8.6 xvfb xauth desktop-file-utils
       - name: Install CPU PyTorch
         if: runner.os != 'macOS'
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install . -r packaging/requirements.txt
       - run: python packaging/prepare.py
       - run: python -m PyInstaller --noconfirm packaging/speak-kokoro.spec
-      - run: python packaging/smoke.py
+      - name: Check frozen app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a python packaging/smoke.py
+          else
+            python packaging/smoke.py
+          fi
       - run: python packaging/package.py
       - name: Check Linux installer
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y ./installers/*.deb
           HF_HUB_OFFLINE=1 /usr/bin/speak-kokoro --self-test --voice af_heart
+          xvfb-run -a /usr/bin/speak-kokoro --gui-self-test
+          desktop-file-validate /usr/share/applications/speak-kokoro.desktop
           sudo apt-get remove -y speak-kokoro
       - name: Check Windows installer
         if: runner.os == 'Windows'
@@ -56,6 +65,10 @@ jobs:
           $env:HF_HUB_OFFLINE = '1'
           & "$installed\speak-kokoro.exe" --self-test --voice af_heart
           if ($LASTEXITCODE -ne 0) { throw 'Installed speech test failed' }
+          & "$installed\speak-kokoro.exe" --gui-self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Installed desktop controls failed' }
+          $p = Start-Process "$installed\Speak Kokoro.exe" -ArgumentList '--gui-self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Windowed launcher failed' }
           $p = Start-Process "$installed\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
       - name: Check Mac installer
@@ -63,9 +76,20 @@ jobs:
         run: |
           sudo installer -pkg installers/*.pkg -target /
           HF_HUB_OFFLINE=1 /usr/local/bin/speak-kokoro --self-test --voice af_heart
+      - name: Render Linux desktop for visual review
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install pillow
+          xvfb-run -a python tests/render_gui.py
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: desktop-preview-linux
+          path: build/desktop-preview/*.png
       - uses: actions/upload-artifact@v4
         with:
           name: speak-kokoro-${{ matrix.name }}
           path: installers/*
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0

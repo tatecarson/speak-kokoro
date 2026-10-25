@@ -22,6 +22,11 @@ with tempfile.TemporaryDirectory(prefix='kokoro-test-') as temporary:
     env.pop('PYTHONHOME', None)
     for args in (['--help'], ['--voices'], ['--self-test', '--voice', 'af_heart']):
         subprocess.run([str(executable), *args], env=env, check=True, timeout=300)
+    if sys.platform != 'darwin':
+        subprocess.run([str(executable), '--gui-self-test'], env=env, check=True, timeout=60)
+    if sys.platform == 'win32':
+        subprocess.run([str(relocated / 'Speak Kokoro.exe'), '--gui-self-test'],
+                       env=env, check=True, timeout=60)
     # Exercise frozen child dispatch separately from audio-device playback.
     child = subprocess.Popen([str(executable), '--daemon'], env=env)
     try:

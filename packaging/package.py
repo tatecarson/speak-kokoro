@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 OUT = ROOT / 'installers'
 
 
@@ -50,6 +50,17 @@ def main():
         bin_dir = stage / 'usr/bin'
         bin_dir.mkdir(parents=True)
         (bin_dir / 'speak-kokoro').symlink_to('/opt/speak-kokoro/speak-kokoro')
+        applications = stage / 'usr/share/applications'
+        applications.mkdir(parents=True)
+        (applications / 'speak-kokoro.desktop').write_text(
+            '[Desktop Entry]\nType=Application\nName=Speak Kokoro\n'
+            'Comment=Read text aloud privately on your computer\n'
+            'Exec=/opt/speak-kokoro/speak-kokoro --gui\n'
+            'Icon=speak-kokoro\nTerminal=false\nCategories=AudioVideo;Audio;Accessibility;\n'
+            'Keywords=speech;reader;tts;\nStartupNotify=true\n', encoding='utf-8')
+        icons = stage / 'usr/share/icons/hicolor/scalable/apps'
+        icons.mkdir(parents=True)
+        shutil.copy2(ROOT / 'packaging/speak-kokoro.svg', icons / 'speak-kokoro.svg')
         control = stage / 'DEBIAN'
         control.mkdir()
         installed_kib = (sum(path.lstat().st_size for path in app.rglob('*')) + 1023) // 1024
@@ -58,7 +69,7 @@ def main():
             f'Installed-Size: {installed_kib}\n'
             'Maintainer: Tate Carson <tatecarson@gmail.com>\n'
             'Section: sound\nPriority: optional\n'
-            'Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libasound2\n'
+            'Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libasound2, libx11-6, libxft2, libfontconfig1\n'
             'Description: Local text-to-speech with bundled Python and Kokoro model\n', encoding='utf-8')
         run('dpkg-deb', '-Zgzip', '-z6', '--root-owner-group', '--build', stage,
             OUT / f'speak-kokoro-{VERSION}-linux-amd64.deb')

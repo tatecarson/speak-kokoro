@@ -153,8 +153,15 @@ class FrozenCommandTests(unittest.TestCase):
     def test_frozen_processes_reenter_the_executable(self):
         with patch.object(runtime, 'BUNDLE', Path('/bundle')):
             self.assertEqual(runtime.client_command(), [sys.executable])
-            self.assertEqual(runtime.daemon_command(), [sys.executable, '--daemon'])
+            executable = str(Path(sys.executable).with_name('speak-kokoro.exe')) if runtime.WINDOWS else sys.executable
+            self.assertEqual(runtime.daemon_command(), [executable, '--daemon'])
             self.assertEqual(runtime.menu_command(), [sys.executable, '--menubar'])
+
+    def test_windowed_windows_app_uses_console_daemon_without_opening_another_window(self):
+        with patch.object(runtime, 'BUNDLE', Path('/bundle')), \
+             patch.object(runtime, 'WINDOWS', True), \
+             patch.object(sys, 'executable', str(Path('/apps/Speak Kokoro.exe'))):
+            self.assertEqual(runtime.daemon_command(), [str(Path('/apps/speak-kokoro.exe')), '--daemon'])
 
     def test_missing_bundled_voice_is_an_error_instead_of_a_download(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(runtime, 'BUNDLE', Path(temp)):

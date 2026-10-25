@@ -13,7 +13,6 @@ Protocol over a unix socket, one message per request:
 Exits after IDLE_TIMEOUT seconds with no requests.
 """
 import atexit
-import fcntl
 import json
 import os
 import re
@@ -26,10 +25,11 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-SOCKET = "/tmp/kokoro-tts.sock"
-SPEAKING_FLAG = "/tmp/kokoro-speaking"
-LEXICON = os.path.expanduser("~/.config/kokoro-lexicon.json")
-LOCKFILE = "/tmp/kokoro-daemon.lock"
+import kokoro_runtime as runtime
+from kokoro_runtime import SOCKET, SPEAKING_FLAG, LEXICON
+from filelock import FileLock, Timeout
+
+runtime.configure_espeak()
 IDLE_TIMEOUT = float(os.environ.get("KOKORO_IDLE_TIMEOUT", 10800))
 SR = 24000
 TIMING = bool(os.environ.get("KOKORO_TIMING"))
@@ -117,8 +117,12 @@ def user_lexicon():
         return _lexicon["data"]
     if _lexicon["mtime"] != mtime:
         try:
-            with open(LEXICON) as fh:
+            with open(LEXICON, encoding="utf-8") as fh:
                 loaded = json.load(fh)
+            if not isinstance(loaded, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in loaded.items()
+            ):
+                raise ValueError("expected an object mapping words to phoneme strings")
             _lexicon["data"] = {k: v for k, v in loaded.items()
                                 if not k.startswith("_")}
             _lexicon["mtime"] = mtime
@@ -129,7 +133,11 @@ def user_lexicon():
 
 
 def apply_lexicon(pipeline):
-    golds = pipeline.g2p.lexicon.golds
+    # Only the English front end has this pronunciation dictionary.
+    lexicon = getattr(pipeline.g2p, "lexicon", None)
+    golds = getattr(lexicon, "golds", None)
+    if golds is None:
+        return
     for word, phonemes in user_lexicon().items():
         # misaki looks up case variants separately, so a sentence-initial
         # capital would otherwise still hit the entry we are overriding.
@@ -233,7 +241,7 @@ def get_pipeline(lang):
     if lang not in pipelines:
         shared = next(iter(pipelines.values()), None)
         pipelines[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M",
-                                    model=shared.model if shared else True)
+                                    model=shared.model if shared else True, device="cpu")
     return pipelines[lang]
 
 
@@ -504,12 +512,19 @@ def stop():
         session.end()
 
 
-def handle(conn):
+def handle(conn, token=None):
     global last_used
-    data = b""
-    while chunk := conn.recv(65536):
-        data += chunk
-    msg = data.decode("utf-8", "replace")
+    try:
+        msg = runtime.receive(conn, token)
+    except (OSError, ValueError):
+        conn.close()
+        return
+    if msg == "PING":
+        try:
+            conn.sendall(b"OK")
+        finally:
+            conn.close()
+        return
     last_used = time.time()
     if msg.startswith("WATCH"):
         with state_lock:
@@ -527,6 +542,10 @@ def handle(conn):
     conn.close()
     with state_lock:
         session = current if current and not current.done else None
+    if msg == "QUIT":
+        stop()
+        cleanup()
+        os._exit(0)
     if msg.startswith("STOP"):
         stop()
     elif msg.startswith("TOGGLE"):
@@ -555,17 +574,12 @@ def reaper():
 
 
 def single_instance():
-    """Refuse to start if another daemon holds the lock.
-
-    Without this, a second daemon would unlink the first one's socket, bind its
-    own, and leave two copies of a 1.5 GB model resident with the first
-    orphaned. flock is released by the kernel on death, so there is no stale
-    lock to clear even after a force quit.
-    """
-    lock = open(LOCKFILE, "w")
+    """An OS-backed lock is released even if the daemon is force-quit."""
+    runtime.prepare_runtime()
+    lock = FileLock(str(runtime.RUNTIME_DIR / "daemon.lock"))
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+        lock.acquire(timeout=0)
+    except Timeout:
         raise SystemExit("kokoro daemon already running")
     return lock
 
@@ -579,7 +593,7 @@ def cleanup():
         except Exception:
             pass
         _stream = None
-    for path in (SOCKET, SPEAKING_FLAG):
+    for path in (SOCKET, runtime.ENDPOINT, SPEAKING_FLAG):
         try:
             os.unlink(path)
         except OSError:
@@ -589,23 +603,21 @@ def cleanup():
 def main():
     lock = single_instance()          # noqa: F841  (held for process lifetime)
     atexit.register(cleanup)
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(sig, lambda *_: (cleanup(), os._exit(0)))
-    if os.path.exists(SOCKET):
-        os.unlink(SOCKET)
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(SOCKET)
-    srv.listen(8)
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), lambda *_: (cleanup(), os._exit(0)))
     warm = os.environ.get("VOICE", "af_heart")
     pl = get_pipeline(warm[0])
     for _ in pl("Ready.", voice=warm, speed=1.0):     # force first inference
         break
+    # Publish an endpoint only after model download and warm-up succeed.
+    srv, token = runtime.listen()
     sys.stderr.write("kokoro daemon ready\n")
     sys.stderr.flush()
     threading.Thread(target=reaper, daemon=True).start()
     while True:
         conn, _ = srv.accept()
-        threading.Thread(target=handle, args=(conn,), daemon=True).start()
+        threading.Thread(target=handle, args=(conn, token), daemon=True).start()
 
 
 if __name__ == "__main__":

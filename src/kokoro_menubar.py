@@ -21,8 +21,10 @@ from PyObjCTools import AppHelper
 
 import kokoro_player
 
-SOCK = "/tmp/kokoro-tts.sock"
-CONF = os.path.expanduser("~/.config/kokoro-tts.conf")
+import kokoro_runtime as runtime
+
+SOCK = str(runtime.SOCKET)
+CONF = str(runtime.CONF)
 SPEAK = os.path.expanduser("~/.local/bin/speak-kokoro")
 AGENT = os.path.expanduser("~/Library/LaunchAgents/com.tatecarson.kokoro-tts.plist")
 
@@ -83,7 +85,7 @@ def show_shortcut(item, service_name):
 def read_conf():
     cfg = {"VOICE": "af_heart", "SPEED": "1.0", "CONTROLS": "1", "HIGHLIGHT": "1"}
     try:
-        with open(CONF) as fh:
+        with open(CONF, encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -96,7 +98,7 @@ def read_conf():
 
 def write_conf(cfg):
     os.makedirs(os.path.dirname(CONF), exist_ok=True)
-    with open(CONF, "w") as fh:
+    with open(CONF, "w", encoding="utf-8") as fh:
         fh.write("# Voice and speed for speak-kokoro. Managed by the menu bar app.\n")
         fh.write(f"VOICE={cfg['VOICE']}\nSPEED={cfg['SPEED']}\n")
         fh.write(f"CONTROLS={cfg['CONTROLS']}\nHIGHLIGHT={cfg['HIGHLIGHT']}\n")
@@ -114,15 +116,12 @@ def send(cmd):
 
 
 def daemon_loaded():
-    return os.path.exists(SOCK) and bool(
-        subprocess.run(["pgrep", "-f", "kokoro_daemon.py"],
-                       capture_output=True).stdout.strip()
-    )
+    return runtime.running()
 
 
 def speaking():
     """The daemon writes this flag while audio is actually playing."""
-    return os.path.exists("/tmp/kokoro-speaking") and daemon_loaded()
+    return runtime.SPEAKING_FLAG.exists() and daemon_loaded()
 
 
 def clipboard_text():
@@ -301,7 +300,8 @@ PLIST = f"""<?xml version="1.0" encoding="UTF-8"?>
     <key>ProgramArguments</key>
     <array>
         <string>{os.path.expanduser('~/.local/share/kokoro-venv/bin/python')}</string>
-        <string>{os.path.expanduser('~/.local/share/kokoro-venv/kokoro_menubar.py')}</string>
+        <string>-m</string>
+        <string>kokoro_menubar</string>
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
@@ -325,8 +325,12 @@ def _single_instance():
     return lock
 
 
-if __name__ == "__main__":
+def main():
     _lock = _single_instance()
     NSApplication.sharedApplication().setActivationPolicy_(
         NSApplicationActivationPolicyAccessory)      # no Dock icon
     KokoroApp().run()
+
+
+if __name__ == "__main__":
+    main()

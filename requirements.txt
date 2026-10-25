@@ -1,5 +1,2 @@
-kokoro
-soundfile
-sounddevice
-rumps
-pyobjc-framework-ApplicationServices
+# Install the package and its platform-appropriate dependencies.
+.

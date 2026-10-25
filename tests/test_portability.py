@@ -148,3 +148,26 @@ class FrozenCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch.object(runtime, 'BUNDLE', Path(temp)):
             with self.assertRaises(ValueError):
                 runtime.voice_path('af_missing')
+
+    def test_long_pronunciation_data_path_is_copied_to_a_short_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp) / ('long-install-folder-' * 6) / 'espeak-ng-data'
+            data.mkdir(parents=True)
+            (data / 'phontab').write_bytes(b'pronunciation-data')
+            loader = types.SimpleNamespace(get_library_path=lambda: '/bundle/espeak',
+                                           get_data_path=lambda: str(data))
+            with patch.dict(sys.modules, {'espeakng_loader': loader}), \
+                 patch.dict(os.environ, {}, clear=False), \
+                 patch.object(runtime, 'BUNDLE', Path(temp)), \
+                 patch.object(runtime, '_ESPEAK_TEMP', None):
+                try:
+                    runtime.configure_espeak()
+                    relocated = Path(loader.get_data_path())
+                    self.assertLess(len(os.fsencode(relocated)), 140)
+                    self.assertEqual((relocated / 'phontab').read_bytes(), b'pronunciation-data')
+                    self.assertEqual(os.environ['PHONEMIZER_ESPEAK_DATA_PATH'], str(relocated))
+                    runtime.configure_espeak()
+                    self.assertEqual(Path(loader.get_data_path()), relocated)
+                finally:
+                    if runtime._ESPEAK_TEMP:
+                        runtime._ESPEAK_TEMP.cleanup()

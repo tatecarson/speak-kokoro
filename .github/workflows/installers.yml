@@ -43,7 +43,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y ./installers/*.deb
-          HF_HUB_OFFLINE=1 speak-kokoro --self-test --voice af_heart
+          HF_HUB_OFFLINE=1 /usr/bin/speak-kokoro --self-test --voice af_heart
           sudo apt-get remove -y speak-kokoro
       - name: Check Windows installer
         if: runner.os == 'Windows'

@@ -22,6 +22,8 @@ These are **unsigned preview installers**. Mac and Windows may ask you to approv
 
 ## Install and hear your first sentence
 
+If you previously installed from source, [uninstall that copy first](docs/source-install.md#update-or-uninstall) so an older command does not take priority over the packaged app. Your settings are kept.
+
 ### Mac
 
 1. Open the `.pkg` and follow the installer. It installs **Speak Kokoro** in Applications and a terminal command in `/usr/local/bin`.

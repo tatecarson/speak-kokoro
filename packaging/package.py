@@ -52,8 +52,10 @@ def main():
         (bin_dir / 'speak-kokoro').symlink_to('/opt/speak-kokoro/speak-kokoro')
         control = stage / 'DEBIAN'
         control.mkdir()
+        installed_kib = (sum(path.lstat().st_size for path in app.rglob('*')) + 1023) // 1024
         (control / 'control').write_text(
             f'Package: speak-kokoro\nVersion: {VERSION}\nArchitecture: amd64\n'
+            f'Installed-Size: {installed_kib}\n'
             'Maintainer: Tate Carson <tatecarson@gmail.com>\n'
             'Section: sound\nPriority: optional\n'
             'Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libasound2\n'

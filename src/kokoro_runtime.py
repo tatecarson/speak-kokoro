@@ -25,6 +25,14 @@ MAX_REQUEST = 4 * 1024 * 1024
 BUNDLE = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else None
 
 
+def configure_audio():
+    """sounddevice's Linux lookup must find our bundled PortAudio without ldconfig."""
+    if BUNDLE and sys.platform.startswith("linux"):
+        original = ctypes.util.find_library
+        portaudio = str(BUNDLE / "libportaudio.so.2")
+        ctypes.util.find_library = lambda name: portaudio if name == "portaudio" else original(name)
+
+
 def client_command():
     return [sys.executable] if BUNDLE else [sys.executable, "-m", "kokoro_cli"]
 

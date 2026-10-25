@@ -15,7 +15,7 @@ if sys.platform.startswith("linux"):
 hiddenimports = ["kokoro_daemon", "kokoro_cli", "kokoro_runtime", "kokoro_desktop"]
 if sys.platform == "darwin":
     hiddenimports += ["kokoro_menubar", "kokoro_player"]
-for package in ["kokoro", "misaki", "espeakng_loader", "en_core_web_sm", "phonemizer"]:
+for package in ["kokoro", "misaki", "espeakng_loader", "en_core_web_sm", "phonemizer", "language_tags"]:
     d, b, h = collect_all(package)
     datas += d
     binaries += b

@@ -1,6 +1,6 @@
 # speak-kokoro
 
-Read text aloud on your own computer with Kokoro. No account, API key, subscription, or separate Python installation is needed when you use a packaged installer. The speech model, all 54 voice files, English language data, and audio libraries are included. Your text stays on your computer, and the included voices work offline.
+Read text aloud on your own computer with Kokoro. No account, API key, subscription, or separate Python installation is needed when you use a packaged installer. The speech model, all 54 voice files, English language data, and audio libraries are included. Your text stays on your computer, and English speech works offline.
 
 Mac includes a menu bar app, reading panel, and selection shortcuts. Windows and Linux currently use terminal commands. A graphical interface for those systems is separate work.
 

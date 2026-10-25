@@ -71,7 +71,7 @@ def doctor():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Read text aloud locally with Kokoro. First use downloads model files.")
+    parser = argparse.ArgumentParser(description="Read text aloud locally with Kokoro." + (" Speech files are included." if runtime.BUNDLE else " First use downloads model files."))
     parser.add_argument("text", nargs="?", help="Text in quotes. With no text, read piped input.")
     parser.add_argument("--voice", help="Voice ID, such as af_heart or bm_george")
     parser.add_argument("--speed", help="Reading speed, 0.5 to 2.0; default 1.0")
@@ -79,7 +79,7 @@ def main(argv=None):
     for flag, help_text in {
         "stop": "Stop reading", "toggle": "Pause or resume; replay the last text if idle",
         "next": "Next sentence", "prev": "Previous sentence", "quit": "Unload the model",
-        "voices": "List available voices, requires internet", "doctor": "Check eSpeak and audio setup",
+        "voices": "List available voices" + ("" if runtime.BUNDLE else ", requires internet"), "doctor": "Check eSpeak and audio setup",
         "download": "Download and test the selected voice without playing audio",
         "self-test": "Check bundled speech generation without playing audio",
         "status": "Show whether the model is running", "paths": "Show settings and log paths",

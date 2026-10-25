@@ -1,6 +1,7 @@
 """Download fixed speech assets and preserve dependency notices/source archives."""
 from importlib import metadata
 import json
+import sys
 from pathlib import Path
 import shutil
 import ssl
@@ -30,6 +31,10 @@ def main():
         shutil.rmtree(cache)
     notices = ASSETS / "licenses"
     notices.mkdir(parents=True, exist_ok=True)
+    # Remove previously collected notices, retaining downloaded source archives.
+    for old in notices.iterdir():
+        if old.name != "sources":
+            shutil.rmtree(old) if old.is_dir() else old.unlink()
     shutil.copy2(ROOT / "LICENSE", notices / "speak-kokoro-LICENSE.txt")
     manifest = []
     for dist in metadata.distributions():
@@ -38,13 +43,20 @@ def main():
                          "license": dist.metadata.get("License-Expression") or dist.metadata.get("License"),
                          "urls": dist.metadata.get_all("Project-URL")})
         for file in dist.files or []:
-            if any(part.lower().startswith(("license", "copying", "notice", "authors")) for part in file.parts):
+            if file.name.upper().split(".")[0] in {"LICENSE", "LICENCE", "COPYING", "NOTICE", "AUTHORS", "COPYRIGHT"}:
                 source = Path(dist.locate_file(file))
-                if source.is_file():
+                if source.is_file() and source.suffix.lower() not in {".so", ".dll", ".dylib", ".pyd", ".py", ".pyc"}:
                     target = notices / name / str(file).replace("../", "").replace("..\\", "")
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, target)
     (notices / "dependencies.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    download(f"https://raw.githubusercontent.com/python/cpython/v{sys.version.split()[0]}/LICENSE",
+             notices / "Python-LICENSE.txt")
+    if sys.platform.startswith("linux"):
+        for name in ("libportaudio2", "libasound2", "libjack-jackd2-0", "libstdc++6", "libgcc-s1"):
+            copyright_file = Path("/usr/share/doc") / name / "copyright"
+            if copyright_file.is_file():
+                shutil.copy2(copyright_file, notices / f"{name}-copyright.txt")
     sources = notices / "sources"
     sources.mkdir(exist_ok=True)
     # espeakng-loader 0.2.4 builds unmodified eSpeak NG 1.52.0. Include its

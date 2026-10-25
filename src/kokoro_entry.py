@@ -5,6 +5,8 @@ import sys
 
 def main():
     multiprocessing.freeze_support()
+    import kokoro_runtime as runtime
+    runtime.configure_audio()
     if sys.argv[1:2] == ["--daemon"]:
         from kokoro_daemon import main as daemon
         daemon()

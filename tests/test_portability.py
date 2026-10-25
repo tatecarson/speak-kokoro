@@ -138,6 +138,18 @@ if __name__ == "__main__":
     unittest.main()
 
 class FrozenCommandTests(unittest.TestCase):
+    def test_mac_selection_input_reaches_the_reader_instead_of_opening_the_menu(self):
+        import kokoro_entry
+        with tempfile.TemporaryFile(mode='w+') as selected_text:
+            selected_text.write('Read this selection')
+            selected_text.seek(0)
+            with patch.object(sys, 'platform', 'darwin'), \
+                 patch.object(sys, 'argv', ['speak-kokoro']), \
+                 patch.object(sys, 'stdin', selected_text), \
+                 patch.object(cli, 'main', return_value=0) as reader:
+                self.assertEqual(kokoro_entry.main(), 0)
+                reader.assert_called_once_with()
+
     def test_frozen_processes_reenter_the_executable(self):
         with patch.object(runtime, 'BUNDLE', Path('/bundle')):
             self.assertEqual(runtime.client_command(), [sys.executable])

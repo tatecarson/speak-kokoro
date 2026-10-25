@@ -161,7 +161,6 @@ class ReaderWindow:
         self.next_button.pack(side="left", padx=(0, 6))
         self.stop_button = ttk.Button(controls, text="Stop", command=self.stop)
         self.stop_button.pack(side="left")
-        ttk.Button(controls, text="Help", command=self.help).pack(side="right")
         footer = ttk.Frame(outer)
         footer.grid(row=6, column=0, sticky="ew", pady=(16, 0))
         footer.columnconfigure(0, weight=1)
@@ -170,6 +169,10 @@ class ReaderWindow:
         self.status_label.grid(row=0, column=0, sticky="w")
         ttk.Label(footer, text="Ctrl+Enter to read · Esc to stop", foreground=MUTED,
                   font=(ui_font, 9)).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.help_button = ttk.Button(footer, text="Help", command=self.help)
+        self.help_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(16, 0))
+        footer.bind("<Configure>", lambda event: self.status_label.configure(
+            wraplength=max(200, event.width - self.help_button.winfo_reqwidth() - 16)))
         root.bind("<Control-Return>", lambda _: self.read())
         root.bind("<Escape>", lambda _: self.stop())
         root.bind("<Control-o>", lambda _: self.open_file())
@@ -412,6 +415,13 @@ def self_test():
         window = ReaderWindow(root, reader)
         try:
             root.update()
+            root.geometry("760x540")
+            root.update()
+            for button in (window.read_button, window.pause_button, window.previous_button,
+                           window.next_button, window.stop_button, window.help_button):
+                assert button.winfo_ismapped(), "A control disappeared at the minimum window size"
+                right = button.winfo_rootx() + button.winfo_width()
+                assert right <= root.winfo_rootx() + root.winfo_width()
             assert window.read_button.instate(["disabled"])
             root.clipboard_get = lambda: "Hello 😀. Read this sentence."
             window.paste_button.invoke()

@@ -11,6 +11,8 @@ requires-python = ">=3.10,<3.13"
 license = {file = "LICENSE"}
 dependencies = [
   "kokoro==0.9.4",
+  # 3.0.14 raises OverflowError while spaCy loads its tokenizer.
+  "preshed==3.0.13",
   "soundfile>=0.13,<1",
   "sounddevice>=0.5,<1",
   "filelock>=3.16,<5",

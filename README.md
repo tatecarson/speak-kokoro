@@ -6,13 +6,17 @@ Windows and Linux open a small floating toolbar. Select text in your document, b
 
 ## Download an installer
 
-Preview installers are built by the [Desktop installers workflow](https://github.com/tatecarson/speak-kokoro/actions/workflows/installers.yml). Open a successful run, scroll to **Artifacts**, download the package matching your computer, and extract the downloaded ZIP. GitHub requires you to sign in to download workflow artifacts. Builds are kept for 30 days.
+Use a download link below for the verified **0.4.1 preview**. **Sign in to GitHub first**: GitHub requires an account to download these build files. Each download is a ZIP; extract it to find the installer.
 
-| Computer | Installer | Requirements |
+| Computer | Download | Requirements |
 |---|---|---|
-| Mac with Apple Silicon | `speak-kokoro-0.4.1-macos-arm64.pkg` | macOS 14 or later |
-| Windows PC | `speak-kokoro-0.4.1-windows-x64-setup.exe` | Windows 10 or 11, x64 |
-| Ubuntu or Debian PC | `speak-kokoro-0.4.1-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
+| Mac with Apple Silicon | [Download Mac installer ZIP](https://github.com/tatecarson/speak-kokoro/actions/runs/40227206602/artifacts/12610819773) | macOS 14 or later |
+| Windows PC | [Download Windows installer ZIP](https://github.com/tatecarson/speak-kokoro/actions/runs/40227206602/artifacts/12612201117) | Windows 10 or 11, x64 |
+| Ubuntu or Debian PC | [Download Linux installer ZIP](https://github.com/tatecarson/speak-kokoro/actions/runs/40227206602/artifacts/12612425734) | Ubuntu 22.04 or later, Debian 12 or later, x64 |
+
+If a download link does not open, go to [the verified build's summary page](https://github.com/tatecarson/speak-kokoro/actions/runs/40227206602#artifacts), stay on **Summary**, and scroll to **Artifacts** at the bottom. Choose `speak-kokoro-macos-arm64`, `speak-kokoro-windows-x64`, or `speak-kokoro-linux-amd64`. Individual job logs and the workflow's list of runs do not contain the download list.
+
+These preview files are stored in GitHub Actions, and expire on **November 24, 2026**. There is no published GitHub Release yet. For newer builds, see the [Desktop installers workflow](https://github.com/tatecarson/speak-kokoro/actions/workflows/installers.yml).
 
 Intel Macs, Windows ARM, and other Linux package formats do not have installer builds yet. [Source installation](docs/source-install.md) remains available where the dependencies support your system.
 

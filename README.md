@@ -1,187 +1,75 @@
 # speak-kokoro
 
-Read text aloud on your own computer with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M). No account, API key, or subscription is needed. Speech is generated locally. Installation and the first use of a voice need internet access to download software and model files; your reading text is not sent to a speech service.
+Read text aloud on your own computer with Kokoro. No account, API key, subscription, or separate Python installation is needed when you use a packaged installer. The speech model, all 54 voice files, English language data, and audio libraries are included. Your text stays on your computer, and the included voices work offline.
 
-The command-line app runs on **macOS, Windows, and Linux**. On Mac, it also includes selection shortcuts, a menu bar app, and a floating reading panel.
+Mac includes a menu bar app, reading panel, and selection shortcuts. Windows and Linux currently use terminal commands. A graphical interface for those systems is separate work.
 
-| What you can do | Mac | Windows | Linux |
-|---|---|---|---|
-| Read quoted text or piped input aloud | Yes | Yes | Yes |
-| Choose a voice and reading speed | Yes | Yes | Yes |
-| Stop, pause, resume, and skip sentences | Yes | Yes | Yes |
-| Keep the model loaded for faster repeat use | Yes | Yes | Yes |
-| Use the included selection shortcuts and reading panel | Yes | No | No |
-| Highlight words in another app | With Accessibility permission | No | No |
+## Download an installer
 
-Windows and Linux currently use a terminal. There is no Windows or Linux tray app or automatic selection hotkey.
+Preview installers are built by the [Desktop installers workflow](https://github.com/tatecarson/speak-kokoro/actions/workflows/installers.yml). Open a successful run, scroll to **Artifacts**, download the package matching your computer, and extract the downloaded ZIP. GitHub requires you to sign in to download workflow artifacts. Builds are kept for 30 days.
 
-## Before you start
+| Computer | Installer | Requirements |
+|---|---|---|
+| Mac with Apple Silicon | `speak-kokoro-0.2.0-macos-arm64.pkg` | macOS 14 or later |
+| Windows PC | `speak-kokoro-0.2.0-windows-x64-setup.exe` | Windows 10 or 11, x64 |
+| Ubuntu or Debian PC | `speak-kokoro-0.2.0-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
 
-- Use a 64-bit computer and **Python 3.12**. Python 3.10 and 3.11 are also accepted. The installer rejects other versions so you do not get an incompatible dependency setup.
-- Have working speakers or headphones. A GPU is not required; speech runs on the CPU.
-- Allow several GB of free disk space for Python dependencies and model files. The main model is about 327 MB, with additional language and voice downloads. The loaded model can use roughly 1.5 GB of memory; usage varies.
-- Allow several minutes for the first installation. Keep internet access available until the first voice finishes downloading.
+Intel Macs, Windows ARM, and other Linux package formats do not have installer builds yet. [Source installation](docs/source-install.md) remains available where the dependencies support your system.
 
-On Windows and Linux, setup chooses CPU-only PyTorch packages to avoid downloading unused GPU libraries.
+Allow a few GB of free disk space. These downloads include Python, PyTorch, and the speech model, so they are much larger than the source-code ZIP. A GPU is not required.
 
-The scripts install into your user account. They do not require you to activate a Python environment each time you use the app. System prerequisites may ask for administrator access.
+These are **unsigned preview installers**. Mac and Windows may ask you to approve an unrecognized developer. Mac builds have local code signatures but are not signed with an Apple Developer ID or notarized. Public releases with verified publisher signatures need signing certificates.
 
-## Download the project
+## Install and hear your first sentence
 
-1. On [this repository's GitHub page](https://github.com/tatecarson/speak-kokoro), choose **Code > Download ZIP**.
-2. Extract the ZIP to a folder you can find, such as Downloads. Do not run setup from inside the ZIP.
-3. Open a terminal in that extracted folder, then follow the instructions for your system below. On Windows, right-click inside the folder and choose **Open in Terminal**. On Mac, open Terminal, type `cd ` with a trailing space, drag the folder into the window, and press Return. On Linux, your file manager may offer **Open in Terminal**.
+### Mac
 
-If you already use Git, you can download the project this way instead:
+1. Open the `.pkg` and follow the installer. It installs **Speak Kokoro** in Applications and a terminal command in `/usr/local/bin`.
+2. Open **Speak Kokoro** from Applications. Its icon appears in the menu bar. The first opening also installs the two text-selection Services for your account.
+3. Copy a sentence, then choose **Speak Clipboard** from the menu. The first reading takes longer while the model loads.
+4. To use a keyboard shortcut, open **System Settings > Keyboard > Keyboard Shortcuts > Services > Text**. Assign keys to **Speak with Kokoro** and **Stop Kokoro Speech**. Suggested keys are Control-Option-S and Control-Option-X.
+5. Select some text in TextEdit and press your Speak shortcut.
 
-```sh
-git clone https://github.com/tatecarson/speak-kokoro.git
-cd speak-kokoro
-```
+Use **Start at Login** in the menu if you want the app to open when you sign in. The reading panel offers voice, speed, pause, and sentence controls. [Mac reading panel and highlighting](docs/macos.md) explains optional Accessibility permissions.
 
-## Install
-
-Choose [macOS](#macos), [Windows](#windows), or [Linux](#linux). Copy commands one line at a time and wait for each to finish.
-
-### macOS
-
-1. Install [Homebrew](https://brew.sh) if you do not already have it. Complete the "Next steps" it prints so `brew` works in Terminal.
-2. Install Python 3.12:
-
-   ```sh
-   brew install python@3.12
-   ```
-
-3. In the extracted speak-kokoro folder, run:
-
-   ```sh
-   bash install.sh
-   ```
-
-   Setup installs eSpeak NG through Homebrew, then installs the app and Mac Quick Actions. It preserves existing voice settings and pronunciation corrections.
-
-4. Check your audio setup, download the default voice, and try a sentence:
-
-   ```sh
-   "$HOME/.local/bin/speak-kokoro" --doctor
-   "$HOME/.local/bin/speak-kokoro" --download
-   "$HOME/.local/bin/speak-kokoro" "Hello! Kokoro is ready."
-   ```
-
-   `--doctor` should list an eSpeak library and your audio output. `--download` tests speech generation without playing sound. Wait for `Ready: af_heart` before continuing. The last command should read the sentence aloud.
-
-5. To enable the short `speak-kokoro` command, add this line to `~/.zshrc`, then open a new Terminal window. If you use Bash, put it in `~/.bashrc` instead.
-
-   ```sh
-   export PATH="$HOME/.local/bin:$PATH"
-   ```
-
-#### Add Mac shortcuts and the reading panel
-
-1. Open **System Settings > Keyboard > Keyboard Shortcuts > Services > Text**.
-2. Assign shortcuts to **Speak with Kokoro** and **Stop Kokoro Speech**. Suggested keys are Control-Option-S and Control-Option-X.
-3. Select a sentence in TextEdit and press your Speak shortcut. Some apps do not expose selected text to macOS Services.
-4. Start the menu bar app:
-
-   ```sh
-   "$HOME/.local/share/kokoro-venv/bin/python" -m kokoro_menubar
-   ```
-
-5. In its menu, turn on **Start at Login** if you want it available after restarting your Mac. It also offers **Speak Clipboard** and **Open Reading Panel**.
-
-The panel has play/pause, sentence navigation, voice, and speed controls. Document highlighting is optional and needs Accessibility permission. See [Mac reading panel and highlighting](docs/macos.md) for details and permission instructions.
+If macOS blocks an unsigned preview after you try to open it, review **System Settings > Privacy & Security** for the approval option. Only approve installers obtained from this repository or a distributor you trust.
 
 ### Windows
 
-Use Windows 10 or 11 with 64-bit Python. These steps use **PowerShell**, not Command Prompt or WSL.
+1. Open the setup `.exe` and follow the installer. It installs for your user account; a separate Python or eSpeak installation is unnecessary.
+2. Open **Speak Kokoro terminal** from the Start menu. This opens a command window in the installed app's folder and displays help.
+3. Type:
 
-1. Install [Python 3.12 for Windows](https://www.python.org/downloads/windows/). Choose the 64-bit installer and include the Python launcher. Open a new PowerShell window and check:
-
-   ```powershell
-   py -3.12 --version
+   ```text
+   speak-kokoro "Hello! Kokoro is ready."
    ```
 
-2. Install the **x64 MSI** from the [official eSpeak NG releases](https://github.com/espeak-ng/espeak-ng/releases). Keep its default installation folder, usually `C:\Program Files\eSpeak NG`. The app checks that folder for `libespeak-ng.dll` automatically. This is the [Windows setup recommended by Kokoro](https://github.com/hexgrad/kokoro#windows-installation).
-3. In the extracted speak-kokoro folder, run:
+4. To stop reading, type:
 
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+   ```text
+   speak-kokoro --stop
    ```
 
-   The execution-policy setting applies only to this setup process. It does not change your permanent PowerShell policy. Setup installs the app under your user account and adds its launcher folder to your user PATH.
+Use the Start menu terminal for these commands. The installer does not change your global PATH. The default app location is `%LOCALAPPDATA%\Programs\Speak Kokoro`.
 
-4. Check setup and try speech. These full-path commands work immediately in the same window:
-
-   ```powershell
-   & "$env:LOCALAPPDATA\speak-kokoro\bin\speak-kokoro.cmd" --doctor
-   & "$env:LOCALAPPDATA\speak-kokoro\bin\speak-kokoro.cmd" --download
-   & "$env:LOCALAPPDATA\speak-kokoro\bin\speak-kokoro.cmd" "Hello! Kokoro is ready."
-   ```
-
-   Wait for `Ready: af_heart` after the download. You should hear the sentence after the last command.
-
-5. Close and reopen your terminal to use `speak-kokoro` without the full path. If it is still not found, sign out and back in, or keep using the full-path command.
-
-For a Python installation without the `py` launcher, supply its full path:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Python "C:\path\to\python.exe"
-```
+If Windows shows an unrecognized-app warning, check that this is the preview installer you intended to download before approving it.
 
 ### Linux
 
-The following commands cover Ubuntu 24.04 and Fedora with Python 3.12 available. Other distributions need Python 3.10 to 3.12, Python's `venv` support, eSpeak NG, and PortAudio. [sounddevice requires a system PortAudio library on Linux](https://python-sounddevice.readthedocs.io/en/latest/installation.html).
-
-1. Install prerequisites for your distribution.
-
-   Ubuntu 24.04:
-
-   ```sh
-   sudo apt update
-   sudo apt install python3.12 python3.12-venv espeak-ng libportaudio2
-   ```
-
-   Fedora:
-
-   ```sh
-   sudo dnf install python3.12 espeak-ng portaudio
-   ```
-
-   On Debian or another Ubuntu release, package names depend on the Python version available. For example, use `python3.11` and `python3.11-venv` if that is the supported version your distribution provides. A newer system Python alone is not enough; install a supported version alongside it.
-
-2. In the extracted speak-kokoro folder, run as your normal user:
-
-   ```sh
-   bash install.sh
-   ```
-
-   If setup cannot find your Python, select it explicitly:
-
-   ```sh
-   KOKORO_PYTHON=/path/to/python3.12 bash install.sh
-   ```
-
-3. Check setup, download the voice, and try speech:
-
-   ```sh
-   "$HOME/.local/bin/speak-kokoro" --doctor
-   "$HOME/.local/bin/speak-kokoro" --download
-   "$HOME/.local/bin/speak-kokoro" "Hello! Kokoro is ready."
-   ```
-
-4. If `speak-kokoro` is not found by itself, add this line to your shell's startup file, usually `~/.bashrc` or `~/.zshrc`, then open a new terminal:
-
-   ```sh
-   export PATH="$HOME/.local/bin:$PATH"
-   ```
-
-Use a desktop session with a working audio output. A headless server or container may need separate audio configuration.
-
-## Everyday use
-
-The following commands work on all three systems once the launcher is on your PATH:
+Open a terminal in the folder containing the downloaded `.deb`, then run:
 
 ```sh
+sudo apt install ./speak-kokoro-0.2.0-linux-amd64.deb
+speak-kokoro "Hello! Kokoro is ready."
+```
+
+`apt` may download standard system audio dependencies if they are missing. Speech itself works offline after installation. Use a desktop session with working speakers or headphones.
+
+## Everyday commands
+
+These commands work in the Windows Start menu terminal, Mac Terminal, or a Linux terminal:
+
+```text
 speak-kokoro "Read this sentence aloud."
 speak-kokoro --voice bm_george --speed 1.1 "Try a different voice."
 speak-kokoro --stop
@@ -189,125 +77,46 @@ speak-kokoro --toggle
 speak-kokoro --next
 speak-kokoro --prev
 speak-kokoro --quit
+speak-kokoro --voices
 speak-kokoro --help
 ```
 
-- A new reading interrupts the previous one. Put text in quotes so the terminal treats it as a single argument.
-- `--toggle` pauses or resumes. If playback has ended, it replays the last reading.
-- `--prev` restarts the current sentence, or goes back one sentence if playback has just started it.
-- `--quit` stops the background model and frees its memory. The next reading starts it again.
-- The command returns after sending the text; speech continues in the background. Use `--stop` to stop it. Closing the terminal does not stop the model.
+Put the reading text in quotes. A new reading interrupts the previous one. The terminal command returns while speech continues in the background.
 
-Loading the model takes longer than sending later readings. By default it unloads after three hours without a playback command. Use `speak-kokoro --status` to check whether it is running.
+`--toggle` pauses or resumes, or replays the previous reading if it has ended. `--next` and `--prev` navigate sentences. `--quit` stops the background model and frees its memory. The next reading loads it again. By default, it unloads after three hours without a playback command.
 
-### Read a file or the clipboard
+The default voice is `af_heart`. Try `am_michael` for another American English voice, or `bf_emma` and `bm_george` for British English. Speeds from `0.5` to `2.0` are accepted. Run `--paths` to locate your saved settings and pronunciation corrections. Mac users can save voice and speed in the reading panel.
 
-Mac:
+The installers include the English and eSpeak pronunciation engines. Although all voice files are present, Japanese and Mandarin need additional language engines and currently require a [source installation](docs/source-install.md#voice-speed-and-languages).
 
-```sh
-cat article.txt | speak-kokoro
-pbpaste | speak-kokoro
+## Check or fix your setup
+
+```text
+speak-kokoro --doctor
+speak-kokoro --self-test
+speak-kokoro --paths
 ```
 
-Windows PowerShell:
+- `--doctor` checks the pronunciation library and your default audio output.
+- `--self-test` generates a short sentence without playing it. This verifies the included model and libraries.
+- `--paths` shows where settings and logs are stored.
 
-```powershell
-$OutputEncoding = [System.Text.UTF8Encoding]::new()
-Get-Content -Raw -Encoding UTF8 .\article.txt | speak-kokoro
-Get-Clipboard -Raw | speak-kokoro
-```
+If speech is silent, check volume and the default output device, then run `--doctor`. After changing headphones or audio devices, try `--quit` and read again. If a Mac shortcut fails, test it in TextEdit and check its Services key binding.
 
-The encoding line preserves non-ASCII text when piping from older Windows PowerShell. The Windows launcher tells Python to read UTF-8 input.
+If the model fails to start, open the log shown by `--paths`. [Report a problem](https://github.com/tatecarson/speak-kokoro/issues) with your OS, installer filename, and relevant error. Remove private reading text before sharing logs.
 
-Linux:
+## Update and uninstall
 
-```sh
-cat article.txt | speak-kokoro
-```
+Install a newer package over the existing version to update. Stop speech and quit the Mac menu bar app first. Your voice settings and pronunciation corrections are kept.
 
-If you already use a clipboard tool, pipe it into the command, for example `wl-paste | speak-kokoro` on Wayland or `xclip -selection clipboard -o | speak-kokoro` on X11. Those tools are separate optional packages.
+- **Windows:** use **Settings > Apps > Installed apps > Speak Kokoro > Uninstall**, or its Start menu uninstaller.
+- **Linux:** run `speak-kokoro --quit`, then `sudo apt remove speak-kokoro`.
+- **Mac:** turn off **Start at Login**, stop the model, and quit the app. Delete **Speak Kokoro** from Applications. Remove the command link with `sudo rm /usr/local/bin/speak-kokoro`. You can remove the two Kokoro workflows from `~/Library/Services` and clear their keyboard shortcuts.
 
-### Voice, speed, and languages
+Settings and pronunciation corrections remain in your account after removal. `--paths` shows their locations before you uninstall.
 
-The default is `af_heart`, an American English voice, at speed `1.0`. Try `am_michael` for another American voice or `bf_emma` and `bm_george` for British English. Speeds from `0.5` to `2.0` are accepted.
+## For developers
 
-Run `speak-kokoro --voices` to fetch the current voice list. This command needs internet access. A new voice may also need a download before it works offline.
+[Install from source](docs/source-install.md), [build installers](docs/installers.md), or read the [architecture notes](docs/development.md).
 
-To change defaults, run `speak-kokoro --paths` and open the settings file it lists in a text editor:
-
-```ini
-VOICE=af_heart
-SPEED=1.0
-```
-
-Command-line `--voice` and `--speed` override environment variables, which override saved settings. Mac users can also save settings through the panel.
-
-Kokoro supports multiple languages; use a voice matching the language of your text. Japanese and Mandarin require extra language packages. See [Kokoro's language guide](https://github.com/hexgrad/kokoro#advanced-usage). Install the corresponding optional package into the app environment, for example:
-
-```sh
-# Mac/Linux, from the extracted project folder:
-"$HOME/.local/share/kokoro-venv/bin/python" -m pip install '.[japanese]'
-# Use '.[chinese]' for Mandarin.
-```
-
-```powershell
-# Windows, from the extracted project folder:
-& "$env:LOCALAPPDATA\speak-kokoro\venv\Scripts\python.exe" -m pip install '.[japanese]'
-```
-
-### Correct an English pronunciation
-
-Run `speak-kokoro --paths` to find `kokoro-lexicon.json`. It maps words to phonemes, not ordinary spelling. For example:
-
-```json
-{
-  "imagines": "ɪmˈæʤənz"
-}
-```
-
-Keep any existing corrections you want. The next reading loads your changes. Invalid JSON keeps the last valid version until you fix it. These overrides apply to the English pronunciation dictionary.
-
-## Troubleshooting
-
-| Problem | What to try |
-|---|---|
-| `speak-kokoro` is not found | Use the full-path command in your system's install section. Follow its PATH step, then reopen your terminal. |
-| Python version or dependency installation error | Use 64-bit Python 3.12 and rerun setup. Do not use `sudo pip`. If you previously installed with a different Python version, uninstall the app first, then reinstall; settings are kept. |
-| `venv` or `ensurepip` is missing on Linux | Install the `python3.12-venv` package, or the matching package for your chosen Python. |
-| eSpeak is missing | Run `--doctor`. Install eSpeak NG as described above. For a custom Windows location, set `$env:PHONEMIZER_ESPEAK_LIBRARY = 'C:\your\folder\libespeak-ng.dll'` before running the app. |
-| No sound or a PortAudio error | Check volume and your default output device, then run `--doctor`. On Linux, check that PortAudio is installed. After switching audio devices, run `--quit` and try again. |
-| First run seems stuck | Run `--download` to see download progress and errors in the terminal. Check internet access and disk space. Initial startup allows up to ten minutes. |
-| Model cannot start or reading fails | Run `--paths`, then open the daemon log it lists. Run `--quit` and retry after correcting the reported error. |
-| Mac shortcut does nothing | Try it in TextEdit. Verify both Services are enabled and assigned keys, then restart the app you were reading from. |
-| Mac panel does not highlight a document | Follow the [Accessibility instructions](docs/macos.md). Some apps cannot report word positions; the panel can still show the reading text. |
-| Windows PowerShell blocks setup on a managed PC | Your organization may enforce script policy. Use `py -3.12 .\install.py` from the project folder if permitted, or contact your administrator. |
-
-For help, [open an issue](https://github.com/tatecarson/speak-kokoro/issues) with your operating system, Python version, `--doctor` output, and the relevant error. Remove any private text from logs before sharing them.
-
-## Update or uninstall
-
-To update, download and extract a fresh copy, then run the installer again. If you used Git, run `git pull` first. Settings and pronunciation corrections are kept. Quit and reopen the Mac menu bar app after an update; a configured login item restarts automatically.
-
-To uninstall, run from the extracted project folder:
-
-Mac or Linux:
-
-```sh
-bash uninstall.sh
-```
-
-Windows:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
-```
-
-Uninstall keeps your settings, pronunciation corrections, logs, and downloaded models. To also remove settings, add `--purge` on Mac/Linux or `-Purge` on Windows. Python, eSpeak NG, and system audio libraries are left installed. On Mac, clear any assigned Services shortcuts yourself.
-
-Model files normally live in `~/.cache/huggingface`, or `%USERPROFILE%\.cache\huggingface` on Windows, unless you set `HF_HOME`. That cache may be shared with other apps; remove only model files you no longer need.
-
-## Development and license
-
-See [development notes](docs/development.md) for architecture, packaging, and test commands. Automated checks cover packaging and local communication across macOS, Windows, and Linux. They do not replace testing audio hardware or Mac Accessibility on real machines.
-
-This project's code is [MIT licensed](LICENSE). Kokoro-82M's weights use Apache-2.0. Dependencies have their own licenses.
+The project's code is [MIT licensed](LICENSE). Kokoro-82M's weights use Apache-2.0. Included dependencies have their own licenses. The packaged app includes a `licenses` folder with dependency notices and source archives for eSpeak NG and phonemizer.

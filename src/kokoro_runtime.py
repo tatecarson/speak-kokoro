@@ -22,6 +22,39 @@ ENDPOINT = RUNTIME_DIR / "endpoint.json"
 SPEAKING_FLAG = RUNTIME_DIR / "speaking"
 LOG = RUNTIME_DIR / "daemon.log"
 MAX_REQUEST = 4 * 1024 * 1024
+BUNDLE = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else None
+
+
+def client_command():
+    return [sys.executable] if BUNDLE else [sys.executable, "-m", "kokoro_cli"]
+
+
+def daemon_command():
+    return [sys.executable, "--daemon"] if BUNDLE else [sys.executable, "-m", "kokoro_daemon"]
+
+
+def menu_command():
+    return [sys.executable, "--menubar"] if BUNDLE else [sys.executable, "-m", "kokoro_menubar"]
+
+
+def make_pipeline(lang, shared=None):
+    from kokoro import KPipeline
+    model = shared if shared is not None else True
+    if BUNDLE and shared is None:
+        from kokoro import KModel
+        model = KModel(repo_id="hexgrad/Kokoro-82M",
+                       config=str(BUNDLE / "model/config.json"),
+                       model=str(BUNDLE / "model/kokoro-v1_0.pth")).to("cpu").eval()
+    return KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M", model=model, device="cpu")
+
+
+def voice_path(voice):
+    if BUNDLE:
+        path = BUNDLE / "model/voices" / (voice + ".pt")
+        if not path.is_file():
+            raise ValueError(f"Voice {voice!r} is not included. Run --voices for available voices.")
+        return str(path)
+    return voice
 
 
 def prepare_runtime():
@@ -34,6 +67,10 @@ def configure_espeak():
     """Find common eSpeak library locations without changing the user's PATH."""
     if os.environ.get("PHONEMIZER_ESPEAK_LIBRARY"):
         return os.environ["PHONEMIZER_ESPEAK_LIBRARY"]
+    # The packaged app includes the same eSpeak library and data used by Misaki.
+    if BUNDLE:
+        import espeakng_loader
+        return espeakng_loader.get_library_path()
     candidates = []
     if WINDOWS:
         for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):

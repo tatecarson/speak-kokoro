@@ -1,6 +1,6 @@
 # Mac reading panel and highlighting
 
-Install with the [macOS steps](../README.md#macos) first.
+Install with the [macOS steps](../README.md#mac) first.
 
 ## Playback controls and highlighting
 

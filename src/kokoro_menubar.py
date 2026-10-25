@@ -7,6 +7,7 @@ synthesis daemon over its unix socket. The heavy model stays on demand.
 import fcntl
 import json
 import os
+import plistlib
 import socket
 import subprocess
 import threading
@@ -25,7 +26,7 @@ import kokoro_runtime as runtime
 
 SOCK = str(runtime.SOCKET)
 CONF = str(runtime.CONF)
-SPEAK = os.path.expanduser("~/.local/bin/speak-kokoro")
+SPEAK = runtime.client_command()
 AGENT = os.path.expanduser("~/Library/LaunchAgents/com.tatecarson.kokoro-tts.plist")
 
 IDLE, BUSY = "○)", "●)"     # ○) and ●)
@@ -204,7 +205,7 @@ class KokoroApp(rumps.App):
         self.mark_checks()
 
     def say(self, text):
-        subprocess.run([SPEAK, text])
+        subprocess.run(SPEAK + [text])
 
     def speak_clipboard(self, _):
         text = clipboard_text().strip()
@@ -216,12 +217,12 @@ class KokoroApp(rumps.App):
         threading.Thread(target=self.say, args=(text,), daemon=True).start()
 
     def stop(self, _):
-        subprocess.run([SPEAK, "--stop"])
+        subprocess.run(SPEAK + ["--stop"])
 
     def unload(self, _):
         if self.loading:
             return
-        subprocess.run([SPEAK, "--quit"])
+        subprocess.run(SPEAK + ["--quit"])
 
     def preload(self, _):
         # Loading takes ~5 s, far longer than the 1 s state poll, so disable the
@@ -292,23 +293,14 @@ class KokoroApp(rumps.App):
             time.sleep(1)
 
 
-PLIST = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.tatecarson.kokoro-tts</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{os.path.expanduser('~/.local/share/kokoro-venv/bin/python')}</string>
-        <string>-m</string>
-        <string>kokoro_menubar</string>
-    </array>
-    <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
-    <key>StandardErrorPath</key><string>/tmp/kokoro-menubar.log</string>
-</dict>
-</plist>
-"""
+PLIST = plistlib.dumps({
+    "Label": "com.tatecarson.kokoro-tts",
+    "ProgramArguments": runtime.menu_command(),
+    "RunAtLoad": True,
+    "KeepAlive": True,
+    "StandardErrorPath": str(runtime.RUNTIME_DIR / "menubar.log"),
+}).decode("utf-8")
+
 
 def _single_instance():
     """Abort if another copy is already in the menu bar.
@@ -326,6 +318,7 @@ def _single_instance():
 
 
 def main():
+    runtime.prepare_runtime()
     _lock = _single_instance()
     NSApplication.sharedApplication().setActivationPolicy_(
         NSApplicationActivationPolicyAccessory)      # no Dock icon

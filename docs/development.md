@@ -69,4 +69,6 @@ The client and daemon share paths and transport in `src/kokoro_runtime.py`. Unix
 
 ## Packaging
 
-`pyproject.toml` defines the package and console entry points. The setup scripts install from the downloaded repository; no PyPI release is assumed. Distribute the complete repository ZIP for the guided setup, including Quick Actions and the pronunciation file. Wheels provide the command-line app; Mac integration is installed by `install.py`. Model weights stay in the Hugging Face cache and are not included in builds.
+`pyproject.toml` defines the package and console entry points. The source setup scripts install from the downloaded repository; no PyPI release is assumed. Distribute the complete repository ZIP for the guided setup, including Quick Actions and the pronunciation file. Wheels provide the command-line app; Mac integration is installed by `install.py`. Model weights stay in the Hugging Face cache and are not included in builds.
+
+Standalone installers are documented in [Build desktop installers](installers.md).

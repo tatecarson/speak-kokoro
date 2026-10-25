@@ -136,3 +136,15 @@ class InstallerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class FrozenCommandTests(unittest.TestCase):
+    def test_frozen_processes_reenter_the_executable(self):
+        with patch.object(runtime, 'BUNDLE', Path('/bundle')):
+            self.assertEqual(runtime.client_command(), [sys.executable])
+            self.assertEqual(runtime.daemon_command(), [sys.executable, '--daemon'])
+            self.assertEqual(runtime.menu_command(), [sys.executable, '--menubar'])
+
+    def test_missing_bundled_voice_is_an_error_instead_of_a_download(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(runtime, 'BUNDLE', Path(temp)):
+            with self.assertRaises(ValueError):
+                runtime.voice_path('af_missing')

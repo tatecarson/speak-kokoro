@@ -1,0 +1,39 @@
+# Build desktop installers
+
+The `Desktop installers` GitHub Actions workflow builds three packages from the same source:
+
+- Apple Silicon Mac, `.pkg` using PyInstaller and Apple's `pkgbuild`.
+- Windows x64, setup `.exe` using PyInstaller and Inno Setup 6.
+- Linux x64, `.deb` using PyInstaller and `dpkg-deb` on Ubuntu 22.04.
+
+Each job relocates its frozen application into a directory containing spaces, sets an empty Hugging Face cache and offline mode, generates real speech without audio playback, and checks daemon startup/shutdown. It then installs the native package on the runner and tests the installed executable. Windows and Linux also test uninstall. CI has no physical speakers, so audible playback and Mac Accessibility still need manual checks.
+
+## Build locally
+
+Build on the target OS with 64-bit Python 3.12 and a clean virtual environment. Windows needs Inno Setup 6. Linux needs `libportaudio2` and `dpkg-deb`. On Linux and Windows, install CPU PyTorch first:
+
+```sh
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+On all platforms:
+
+```sh
+python -m pip install . -r packaging/requirements.txt
+python packaging/prepare.py
+python -m PyInstaller --noconfirm packaging/speak-kokoro.spec
+python packaging/smoke.py
+python packaging/package.py
+```
+
+Installers appear in `installers/`. The model and voice files are fetched at a fixed Hugging Face revision during the build and read directly from the installed bundle at runtime. The English spaCy model is included as a package with its metadata, preventing spaCy from attempting a runtime pip installation. The bundled eSpeak library and its pronunciation data come from `espeakng-loader`.
+
+The executable dispatches `--daemon` to the background server rather than treating itself as a Python interpreter. Mac app launch opens the existing menu bar; terminal commands use the same executable. macOS Services are installed for the current user on first app launch, and the login item points at the packaged executable.
+
+## Distribution
+
+Successful CI runs attach the native installers as downloadable workflow artifacts. Pull-request builds are previews and expire after 30 days. Keep release artifacts separately before sharing long-lived download links. The workflow also runs for version tags, but does not automatically publish a GitHub Release.
+
+These builds do not include publisher signing credentials. PyInstaller creates local signatures where required on Mac; the resulting package is not Developer ID signed or notarized. Windows setup is not Authenticode signed. Signing and notarization require the maintainer's certificates and credentials before a trusted public release can be produced.
+
+The installers include third-party notices, package version metadata, eSpeak NG 1.52.0 source and its build script, and phonemizer source. Keep these with redistributed binaries. Changes to bundled dependency versions need a corresponding review of the included notices and source archives.

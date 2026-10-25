@@ -28,10 +28,10 @@ def start_daemon(voice, timeout=600):
         if runtime.running():
             return
         print("Loading Kokoro. The first run may download model and language files; please wait.", file=sys.stderr)
-        env = dict(os.environ, VOICE=voice)
+        env = dict(os.environ, VOICE=voice, PYINSTALLER_RESET_ENVIRONMENT="1")
         kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if runtime.WINDOWS else {"start_new_session": True}
         with runtime.LOG.open("a", encoding="utf-8") as log:
-            child = subprocess.Popen([sys.executable, "-m", "kokoro_daemon"],
+            child = subprocess.Popen(runtime.daemon_command(),
                                      stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                      env=env, **kwargs)
         deadline = time.monotonic() + timeout
@@ -81,12 +81,13 @@ def main(argv=None):
         "next": "Next sentence", "prev": "Previous sentence", "quit": "Unload the model",
         "voices": "List available voices, requires internet", "doctor": "Check eSpeak and audio setup",
         "download": "Download and test the selected voice without playing audio",
+        "self-test": "Check bundled speech generation without playing audio",
         "status": "Show whether the model is running", "paths": "Show settings and log paths",
     }.items():
         actions.add_argument("--" + flag, action="store_true", help=help_text)
     args = parser.parse_args(argv)
     if args.text is not None and any(getattr(args, k) for k in
-                                    ("stop", "toggle", "next", "prev", "quit", "voices", "doctor", "download", "status", "paths")):
+                                    ("stop", "toggle", "next", "prev", "quit", "voices", "doctor", "download", "status", "paths", "self_test")):
         parser.error("Use text or an action, not both.")
     try:
         if args.paths:
@@ -102,6 +103,10 @@ def main(argv=None):
                 if runtime.running():
                     runtime.send(command.upper())
                 return 0
+        if args.voices and runtime.BUNDLE:
+            for path in sorted((runtime.BUNDLE / "model/voices").glob("*.pt")):
+                print(path.stem)
+            return 0
         if args.voices:
             from huggingface_hub import list_repo_files
             for name in sorted(list_repo_files("hexgrad/Kokoro-82M")):
@@ -110,13 +115,22 @@ def main(argv=None):
             return 0
         cfg = runtime.read_config()
         voice, speed = validate_settings(args.voice or cfg["VOICE"], args.speed or cfg["SPEED"])
-        if args.download:
+        if args.download or args.self_test:
             runtime.configure_espeak()
-            from kokoro import KPipeline
-            print("Downloading and testing the selected voice. This can take several minutes.", flush=True)
-            pipeline = KPipeline(lang_code=voice[0], repo_id="hexgrad/Kokoro-82M", device="cpu")
-            for _ in pipeline("Ready.", voice=voice, speed=speed):
-                pass
+            print("Checking speech generation. This can take a minute.", flush=True)
+            pipeline = runtime.make_pipeline(voice[0])
+            samples = 0
+            for result in pipeline("Kokoro is ready.", voice=runtime.voice_path(voice), speed=speed):
+                samples += len(result.audio)
+            if not samples:
+                raise RuntimeError("The model produced no audio.")
+            if args.self_test:
+                from phonemizer.backend import EspeakBackend
+                backend = EspeakBackend(language="en-us")
+                if not backend.phonemize(["Kokoro"])[0].strip():
+                    raise RuntimeError("The bundled pronunciation library produced no phonemes.")
+                import sounddevice
+                print(f"Speech and audio libraries loaded; generated {samples} samples without playback.")
             print(f"Ready: {voice}. You can now read text aloud.")
             return 0
         if args.text is None and sys.stdin.isatty():

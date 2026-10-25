@@ -32,4 +32,4 @@ Issues = "https://github.com/tatecarson/speak-kokoro/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["kokoro_cli", "kokoro_runtime", "kokoro_daemon", "kokoro_menubar", "kokoro_player"]
+py-modules = ["kokoro_cli", "kokoro_runtime", "kokoro_daemon", "kokoro_menubar", "kokoro_player", "kokoro_entry", "kokoro_desktop"]

@@ -1,0 +1,33 @@
+Speak Kokoro
+
+Python, the speech model, voices, and pronunciation data are included.
+No separate Python or eSpeak installation is required.
+
+Windows: open "Speak Kokoro terminal" from the Start menu.
+Mac: open Speak Kokoro from Applications for the menu bar and reading panel.
+Linux: open a terminal.
+
+Read a sentence:
+  speak-kokoro "Hello! Kokoro is ready."
+
+Stop reading:
+  speak-kokoro --stop
+
+Other controls:
+  speak-kokoro --toggle
+  speak-kokoro --next
+  speak-kokoro --prev
+  speak-kokoro --quit
+
+Voice and speed:
+  speak-kokoro --voice bm_george --speed 1.1 "Try another voice."
+  speak-kokoro --voices
+
+Check speech generation without playing audio:
+  speak-kokoro --self-test
+
+Windows and Linux currently use terminal commands. A graphical interface will
+be a separate update. Mac includes the existing menu bar and reading panel.
+
+Help and documentation: https://github.com/tatecarson/speak-kokoro
+Third-party licenses and source archives are included in the app's licenses folder.

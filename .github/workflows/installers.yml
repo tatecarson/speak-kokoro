@@ -1,0 +1,71 @@
+name: Desktop installers
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macos-arm64
+          - os: windows-latest
+            name: windows-x64
+          - os: ubuntu-22.04
+            name: linux-amd64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux build libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+      - name: Install CPU PyTorch
+        if: runner.os != 'macOS'
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install . -r packaging/requirements.txt
+      - run: python packaging/prepare.py
+      - run: python -m PyInstaller --noconfirm packaging/speak-kokoro.spec
+      - run: python packaging/smoke.py
+      - run: python packaging/package.py
+      - name: Check Linux installer
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y ./installers/*.deb
+          HF_HUB_OFFLINE=1 speak-kokoro --self-test --voice af_heart
+          sudo apt-get remove -y speak-kokoro
+      - name: Check Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem installers/*.exe).FullName
+          $installed = Join-Path $env:RUNNER_TEMP 'Installed Kokoro'
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$installed`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Setup failed: $($p.ExitCode)" }
+          $env:HF_HUB_OFFLINE = '1'
+          & "$installed\speak-kokoro.exe" --self-test --voice af_heart
+          if ($LASTEXITCODE -ne 0) { throw 'Installed speech test failed' }
+          $p = Start-Process "$installed\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
+      - name: Check Mac installer
+        if: runner.os == 'macOS'
+        run: |
+          sudo installer -pkg installers/*.pkg -target /
+          HF_HUB_OFFLINE=1 /usr/local/bin/speak-kokoro --self-test --voice af_heart
+      - uses: actions/upload-artifact@v4
+        with:
+          name: speak-kokoro-${{ matrix.name }}
+          path: installers/*
+          if-no-files-found: error
+          retention-days: 30

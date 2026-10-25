@@ -36,7 +36,6 @@ TIMING = bool(os.environ.get("KOKORO_TIMING"))
 
 import numpy as np
 import sounddevice as sd
-from kokoro import KPipeline
 
 # Pause inserted after a chunk, by the punctuation that ended it. Kokoro bakes
 # ~0.78s of silence into every chunk; we strip that and put back something
@@ -240,8 +239,7 @@ def get_pipeline(lang):
     """
     if lang not in pipelines:
         shared = next(iter(pipelines.values()), None)
-        pipelines[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M",
-                                    model=shared.model if shared else True, device="cpu")
+        pipelines[lang] = runtime.make_pipeline(lang, shared.model if shared else None)
     return pipelines[lang]
 
 
@@ -356,7 +354,7 @@ class Session:
         pause = PAUSE.get(raw[-1:], DEFAULT_PAUSE)
         if i == len(self.spans) - 1:
             pause = 0.0
-        for result in pipeline(clean(raw), voice=voice, speed=speed):
+        for result in pipeline(clean(raw), voice=runtime.voice_path(voice), speed=speed):
             audio, cut = trim(result.audio)
             for tok in result.tokens or ():
                 if tok.start_ts is None or not any(c.isalnum() for c in tok.text):
@@ -608,7 +606,7 @@ def main():
             signal.signal(getattr(signal, name), lambda *_: (cleanup(), os._exit(0)))
     warm = os.environ.get("VOICE", "af_heart")
     pl = get_pipeline(warm[0])
-    for _ in pl("Ready.", voice=warm, speed=1.0):     # force first inference
+    for _ in pl("Ready.", voice=runtime.voice_path(warm), speed=1.0):     # force first inference
         break
     # Publish an endpoint only after model download and warm-up succeed.
     srv, token = runtime.listen()

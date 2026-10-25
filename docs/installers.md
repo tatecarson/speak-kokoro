@@ -41,3 +41,9 @@ Successful CI runs attach the native installers as downloadable workflow artifac
 These builds do not include publisher signing credentials. PyInstaller creates local signatures where required on Mac; the resulting package is not Developer ID signed or notarized. Windows setup is not Authenticode signed. Signing and notarization require the maintainer's certificates and credentials before a trusted public release can be produced.
 
 The installers include third-party notices, package version metadata, eSpeak NG 1.52.0 source and its build script, and phonemizer source. Keep these with redistributed binaries. Changes to bundled dependency versions need a corresponding review of the included notices and source archives.
+
+## Selection workflow checks
+
+`tests/check_selection.py` runs only on an isolated CI desktop. It opens a separate WPF text document on Windows or a Tk document on Linux, selects a passage, clicks the floating reader button, and checks that only the selected passage reaches the speech controller. It checks that the clipboard and optional text editor remain unchanged and that Stop rejects a late capture. Windows also checks that the real mouse click keeps the document foreground. Native installer checks invoke the packaged selection helper. These automated checks do not establish compatibility with every application or Wayland compositor.
+
+Windows selection capture runs UI Automation in a separate MTA helper process with a timeout. Its generated COM interfaces are included in the frozen app. Linux uses bounded `xclip` or `wl-paste --primary` calls. Selection errors never fall back to the ordinary clipboard.

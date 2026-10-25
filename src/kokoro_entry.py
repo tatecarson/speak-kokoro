@@ -12,6 +12,9 @@ def main():
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
+    if sys.argv[1:2] == ["--capture-selection"]:
+        from kokoro_selection import worker_main
+        return worker_main()
     import kokoro_runtime as runtime
     runtime.configure_audio()
     if sys.argv[1:2] == ["--daemon"]:

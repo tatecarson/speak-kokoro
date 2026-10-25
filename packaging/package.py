@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 OUT = ROOT / 'installers'
 
 
@@ -69,7 +69,7 @@ def main():
             f'Installed-Size: {installed_kib}\n'
             'Maintainer: Tate Carson <tatecarson@gmail.com>\n'
             'Section: sound\nPriority: optional\n'
-            'Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libasound2, libx11-6, libxft2, libfontconfig1\n'
+            'Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libasound2, libx11-6, libxft2, libfontconfig1, xclip, wl-clipboard\n'
             'Description: Local text-to-speech with bundled Python and Kokoro model\n', encoding='utf-8')
         run('dpkg-deb', '-Zgzip', '-z6', '--root-owner-group', '--build', stage,
             OUT / f'speak-kokoro-{VERSION}-linux-amd64.deb')

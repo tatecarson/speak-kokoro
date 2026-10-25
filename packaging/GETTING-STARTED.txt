@@ -1,3 +1,7 @@
+Windows and Linux: open Speak Kokoro, select text in your document, then click Read selection on the floating toolbar. No manual copy or paste is needed. Use Pause or Stop while keeping your document in view. Settings & text opens the optional pasted-text reader; closing it returns to the toolbar. Close the toolbar to quit.
+
+Selection support: Windows apps must expose text through UI Automation. Linux uses PRIMARY selection through xclip on X11 or wl-clipboard on supported Wayland desktops. If selection is unavailable, the toolbar explains it; it never reads old clipboard contents instead.
+
 Speak Kokoro
 
 Python, the speech model, voices, and pronunciation data are included.
@@ -7,14 +11,14 @@ Windows: open "Speak Kokoro" from the Start menu.
 Mac: open Speak Kokoro from Applications for the menu bar and reading panel.
 Linux: open "Speak Kokoro" from your applications menu.
 
-In the Windows/Linux window, paste or type text and choose Read aloud.
+In the optional Settings & text window, paste or type text and choose Read aloud.
 Choose a voice and speed below the text. Pause, resume, go back a sentence,
 skip ahead, or stop with the playback buttons. Preferences save automatically.
 Ctrl+Enter reads, Esc stops, and Ctrl+O opens a plain text file.
-Closing the window stops reading and unloads the model.
+Closing the floating toolbar stops reading and unloads the model.
 
 Optional commands: use "Speak Kokoro terminal" on Windows, or your normal
-terminal on Mac/Linux. You can open the reading window with:
+terminal on Mac/Linux. You can open the floating toolbar with:
   speak-kokoro --gui
 
 Read a sentence:

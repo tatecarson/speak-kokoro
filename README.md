@@ -2,7 +2,7 @@
 
 Read text aloud on your own computer with Kokoro. No account, API key, subscription, or separate Python installation is needed when you use a packaged installer. The speech model, all 54 voice files, English language data, and audio libraries are included. Your text stays on your computer, and English speech works offline.
 
-Windows and Linux include a desktop reading window. Paste text or open a text file, choose a voice, and listen with word highlighting and playback controls. Mac includes its menu bar app, reading panel, and selection shortcuts.
+Windows and Linux open a small floating toolbar. Select text in your document, browser, or other supported app, then click **Read selection**. The original document stays in view while you listen. An optional reading window handles pasted text and files. Mac includes its menu bar app, reading panel, and selection shortcuts.
 
 ## Download an installer
 
@@ -10,9 +10,9 @@ Preview installers are built by the [Desktop installers workflow](https://github
 
 | Computer | Installer | Requirements |
 |---|---|---|
-| Mac with Apple Silicon | `speak-kokoro-0.3.0-macos-arm64.pkg` | macOS 14 or later |
-| Windows PC | `speak-kokoro-0.3.0-windows-x64-setup.exe` | Windows 10 or 11, x64 |
-| Ubuntu or Debian PC | `speak-kokoro-0.3.0-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
+| Mac with Apple Silicon | `speak-kokoro-0.4.0-macos-arm64.pkg` | macOS 14 or later |
+| Windows PC | `speak-kokoro-0.4.0-windows-x64-setup.exe` | Windows 10 or 11, x64 |
+| Ubuntu or Debian PC | `speak-kokoro-0.4.0-linux-amd64.deb` | Ubuntu 22.04 or later, Debian 12 or later, x64 |
 
 Intel Macs, Windows ARM, and other Linux package formats do not have installer builds yet. [Source installation](docs/source-install.md) remains available where the dependencies support your system.
 
@@ -39,9 +39,9 @@ If macOS blocks an unsigned preview after you try to open it, review **System Se
 ### Windows
 
 1. Open the setup `.exe` and follow the installer. It installs for your user account; a separate Python or eSpeak installation is unnecessary.
-2. Open **Speak Kokoro** from the Start menu. A reading window opens without a terminal.
-3. Type a sentence, or choose **Paste text** to use text you copied.
-4. Choose **Read aloud**. Use **Pause**, **Resume**, and **Stop** to control playback.
+2. Open **Speak Kokoro** from the Start menu. A small floating toolbar opens without a terminal.
+3. Return to your document and select a sentence.
+4. Click **Read selection** on the toolbar. Keep reading your original document while Kokoro speaks. Use **Pause**, **Resume**, and **Stop** on the toolbar.
 
 The default app location is `%LOCALAPPDATA%\Programs\Speak Kokoro`. **Speak Kokoro terminal** remains available in the Start menu for optional command-line use; the installer does not change your global PATH.
 
@@ -52,14 +52,31 @@ If Windows shows an unrecognized-app warning, check that this is the preview ins
 Open a terminal in the folder containing the downloaded `.deb`, then run:
 
 ```sh
-sudo apt install ./speak-kokoro-0.3.0-linux-amd64.deb
+sudo apt install ./speak-kokoro-0.4.0-linux-amd64.deb
 ```
 
-Open **Speak Kokoro** from your applications menu, paste or type a sentence, and choose **Read aloud**. You can also open the window with `speak-kokoro --gui`.
+Open **Speak Kokoro** from your applications menu. Select text in your document, then click **Read selection** on the floating toolbar. You can also open the toolbar with `speak-kokoro --gui`.
 
 `apt` may download standard system audio and display dependencies if they are missing. Speech itself works offline after installation. Use a graphical desktop session with working speakers or headphones. On Wayland desktops, the Tk window uses XWayland.
 
-## Use the Windows or Linux reading window
+## Read selected text while staying in your document
+
+1. Open Speak Kokoro once. Its small toolbar stays above other windows. Drag its title bar to a convenient spot.
+2. Select text where you are working.
+3. Click **Read selection**. No copy or paste step is needed, and your clipboard is unchanged.
+4. Use **Pause / Resume** or **Stop** while keeping the original document visible.
+
+The app reads the selected passage, not the whole document. It does not move the selection or add word highlighting inside another app. Changing the selection while speech plays does not change the reading until you click **Read selection** again.
+
+**Windows:** the source app must expose its text selection through Windows UI Automation. Support varies by app and document format. Password fields, image-only PDFs, and apps running with higher privileges may be unavailable. The toolbar does not take focus from the source document when you click Read selection.
+
+**Linux:** X11 sessions use the primary selection provided by text apps. On Wayland, the desktop and app must expose a primary selection to `wl-clipboard`. Some Wayland environments restrict this. If it is unavailable, use an X11 desktop session or the optional pasted-text reader. The `.deb` installs `xclip` and `wl-clipboard` as system dependencies. Primary selection can persist after you leave an app, so select the intended passage immediately before clicking Read selection.
+
+If a selection cannot be read, the toolbar explains why. It never substitutes ordinary clipboard contents. There are no global keyboard shortcuts on Windows or Linux yet.
+
+Choose **Settings & text** to change voice or speed, open a file, or explicitly paste text when an app cannot share its selection. Close that larger window or choose **Back to document toolbar** to return. Close the floating toolbar to quit and stop speech.
+
+## Optional Windows or Linux reading window
 
 - **Paste text** replaces the text area with your clipboard text. **Open text file** loads a plain UTF-8 `.txt` or `.md` file.
 - **Read aloud** starts a new reading. The first reading takes longer while the voice loads; **Stop** also cancels loading.
@@ -67,9 +84,9 @@ Open **Speak Kokoro** from your applications menu, paste or type a sentence, and
 - **Voice** and **Speed** are saved automatically. Changing them during playback restarts the current sentence with the new settings.
 - **Help** shows keyboard shortcuts, audio troubleshooting, and the diagnostic log.
 
-Press **Ctrl+Enter** to read, **Esc** to stop, or **Ctrl+O** to open a text file. Closing the window stops playback and unloads the model. The app does not save the text you paste or type.
+Press **Ctrl+Enter** to read, **Esc** to stop, or **Ctrl+O** to open a text file. Closing the floating toolbar stops playback and unloads the model. Closing the optional text window returns to the toolbar. The app does not save the text you paste or type.
 
-The desktop voice picker includes English, Spanish, French, Hindi, Italian, and Portuguese voices. It does not add global selection shortcuts or a system tray icon on Windows or Linux.
+The desktop voice picker includes English, Spanish, French, Hindi, Italian, and Portuguese voices. The floating toolbar provides selection reading; it does not add a system tray icon.
 
 ## Everyday commands
 
@@ -114,7 +131,7 @@ If the model fails to start, open the log shown by `--paths`. [Report a problem]
 
 ## Update and uninstall
 
-Install a newer package over the existing version to update. Close the reading window, stop speech, and quit the Mac menu bar app first. Your voice settings and pronunciation corrections are kept.
+Install a newer package over the existing version to update. Close the floating toolbar, stop speech, and quit the Mac menu bar app first. Your voice settings and pronunciation corrections are kept.
 
 - **Windows:** use **Settings > Apps > Installed apps > Speak Kokoro > Uninstall**, or its Start menu uninstaller.
 - **Linux:** run `speak-kokoro --quit`, then `sudo apt remove speak-kokoro`.

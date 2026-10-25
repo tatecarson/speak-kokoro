@@ -49,4 +49,10 @@ with tempfile.TemporaryDirectory() as folder:
     capture('reader-playing.png')
     window.handle_event({'ev': 'error', 'id': 1, 'message': 'No audio output device is available.'})
     capture('reader-error.png')
+    window.stop()
+    window.show_toolbar()
+    root.update()
+    panel = window.toolbar
+    x, y = panel.winfo_rootx(), panel.winfo_rooty()
+    ImageGrab.grab(bbox=(x, y, x+panel.winfo_width(), y+panel.winfo_height())).save(output/'toolbar.png')
     window.close()

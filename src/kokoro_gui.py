@@ -3,6 +3,7 @@ from pathlib import Path
 import queue
 import sys
 import tempfile
+import threading
 import tkinter as tk
 from tkinter import filedialog, font, messagebox, ttk
 
@@ -41,6 +42,9 @@ class ReaderWindow:
         self.playback_text = ""
         self.spans = []
         self.closed = False
+        self.toolbar = None
+        self.capture_id = 0
+        self.capturing = False
         root.title("Speak Kokoro")
         root.geometry("960x720")
         root.minsize(760, 540)
@@ -180,6 +184,73 @@ class ReaderWindow:
         self.poll_id = root.after(80, self.poll)
         self.text.focus_set()
 
+    def show_toolbar(self):
+        """Keep the document visible; the large reader is an optional second view."""
+        if self.toolbar is None:
+            from kokoro_selection import protect_document_focus
+            panel = self.toolbar = tk.Toplevel(self.root)
+            panel.withdraw()
+            panel.title("Speak Kokoro")
+            panel.configure(background=PAPER)
+            panel.attributes("-topmost", True)
+            panel.resizable(False, False)
+            panel.protocol("WM_DELETE_WINDOW", self.close)
+            frame = ttk.Frame(panel, padding=16)
+            frame.pack(fill="both", expand=True)
+            ttk.Label(frame, text="LISTEN IN YOUR DOCUMENT", foreground=GREEN,
+                      font=(self.ui_font, 9, "bold")).pack(anchor="w", pady=(0, 10))
+            row = ttk.Frame(frame)
+            row.pack(fill="x")
+            self.selection_button = ttk.Button(row, text="Read selection", style="Read.TButton",
+                                                takefocus=False, command=self.read_selection)
+            self.selection_button.pack(side="left", padx=(0, 8))
+            self.toolbar_pause = ttk.Button(row, text="Pause", width=7, takefocus=False,
+                                            command=lambda: self.control("TOGGLE"))
+            self.toolbar_pause.pack(side="left", padx=(0, 6))
+            self.toolbar_stop = ttk.Button(row, text="Stop", width=6, takefocus=False, command=self.stop)
+            self.toolbar_stop.pack(side="left")
+            self.toolbar_status = ttk.Label(frame, textvariable=self.status, foreground=MUTED, wraplength=410)
+            self.toolbar_status.pack(anchor="w", pady=(12, 8))
+            ttk.Button(frame, text="Settings & text…", takefocus=False,
+                       command=self.show_reader).pack(anchor="e")
+            panel.update_idletasks()
+            protect_document_focus(panel)
+            panel.geometry(f"+{max(0, panel.winfo_screenwidth()-panel.winfo_reqwidth()-40)}+60")
+            self.root.protocol("WM_DELETE_WINDOW", self.show_toolbar)
+            menu = tk.Menu(self.root, tearoff=False)
+            menu.add_command(label="Back to document toolbar", command=self.show_toolbar)
+            menu.add_command(label="Quit", command=self.close)
+            self.root.configure(menu=menu)
+        self.root.withdraw()
+        self.toolbar.deiconify()
+        self.status.set("Select text in your document, then click Read selection." if not self.active and not self.loading else self.status.get())
+        self._buttons()
+
+    def show_reader(self):
+        self.toolbar.withdraw()
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def read_selection(self):
+        if self.capturing or self.loading:
+            return
+        from kokoro_selection import capture_selection
+        self.capture_id += 1
+        request = self.capture_id
+        self.capturing = True
+        self.status.set("Reading your selection…")
+        self._buttons()
+        def capture():
+            try:
+                event = {"ev": "selection", "request": request, "text": capture_selection()}
+            except Exception as exc:
+                event = {"ev": "selection_error", "request": request,
+                         "message": str(exc) if isinstance(exc, ValueError) else
+                         "The document did not respond. Select text again and retry."}
+            self.controller.events.put(event)
+        threading.Thread(target=capture, daemon=True).start()
+
     def content(self):
         return self.text.get("1.0", "end-1c")
 
@@ -206,6 +277,11 @@ class ReaderWindow:
         for box in (self.voice_box, self.speed_box):
             box.configure(state="disabled" if self.loading else "readonly")
         self.pause_button.configure(text="Resume" if self.paused else "Pause")
+        if self.toolbar is not None:
+            self.selection_button.configure(state="disabled" if self.loading or self.capturing else "normal")
+            self.toolbar_pause.configure(state="normal" if self.active else "disabled",
+                                         text="Resume" if self.paused else "Pause")
+            self.toolbar_stop.configure(state="normal" if self.active or self.loading or self.capturing else "disabled")
 
     def paste(self):
         try:
@@ -251,12 +327,15 @@ class ReaderWindow:
             self.error(f"Couldn't save voice settings: {exc}")
 
     def read(self):
+        self.read_text(self.content())
+
+    def read_text(self, text):
         if self.loading:
             return
         try:
             voice, speed = self.preferences()
             runtime.save_settings(voice, speed)
-            self.controller.read(self.content(), voice, speed)
+            self.controller.read(text, voice, speed)
         except (OSError, ValueError) as exc:
             self.error(str(exc))
             return
@@ -277,6 +356,8 @@ class ReaderWindow:
             self.controller.control(command)
 
     def stop(self):
+        self.capture_id += 1
+        self.capturing = False
         self.controller.control("STOP")
         self.loading = self.active = self.paused = False
         self.ignore_through = self.session_id or self.ignore_through
@@ -284,7 +365,7 @@ class ReaderWindow:
         self.failed = False
         self.progress.stop()
         self.progress.configure(mode="determinate", value=0)
-        self.status.set("Stopped. You can edit the text or read again.")
+        self.status.set("Stopped. Select another passage or read again.")
         self.text.tag_remove("word", "1.0", "end")
         self.text.tag_remove("sentence", "1.0", "end")
         self._buttons()
@@ -312,7 +393,15 @@ class ReaderWindow:
 
     def handle_event(self, event):
         kind = event.get("ev")
-        if kind == "client_error":
+        if kind in ("selection", "selection_error"):
+            if event["request"] != self.capture_id or self.closed:
+                return
+            self.capturing = False
+            if kind == "selection_error":
+                self.status.set(event["message"])
+            else:
+                self.read_text(event["text"])
+        elif kind == "client_error":
             self.error(event.get("message", "Please try again."))
         elif kind == "disconnected":
             self.session_id = None
@@ -379,7 +468,13 @@ class ReaderWindow:
                 diagnostic = log.read().decode("utf-8", errors="replace")
         except OSError:
             diagnostic = "No diagnostic log yet."
-        text.insert("1.0", "Paste or open plain text, choose a voice, then select Read aloud.\n\n"
+        text.insert("1.0", "Use the floating toolbar to read selected text in another app. Select text in the document, then click Read selection.\n"
+                    "The toolbar stays above other windows. Drag its title bar to move it. Close it to quit.\n"
+                    "Settings & text opens this optional reader. Close this reader or choose Back to document toolbar to return.\n\n"
+                    "Windows needs an app that exposes selected text through UI Automation. Password fields are excluded.\n"
+                    "Linux uses PRIMARY selection, with xclip on X11 or wl-clipboard on supported Wayland desktops. Some Wayland desktops restrict access.\n"
+                    "No selection available? The app reports it instead of reading old clipboard text. You can explicitly paste text in this reader as a fallback.\n\n"
+                    "In this reader, paste or open plain text, choose a voice, then select Read aloud.\n\n"
                     "Ctrl+Enter reads the text. Esc stops it. Ctrl+O opens a text file.\n"
                     "Voice and speed changes apply to the current sentence.\n"
                     "Closing the window stops playback and unloads the speech model.\n\n"
@@ -392,6 +487,7 @@ class ReaderWindow:
         if self.closed:
             return
         self.closed = True
+        self.capture_id += 1
         self.root.after_cancel(self.poll_id)
         self.controller.close()
         self.root.destroy()
@@ -454,6 +550,19 @@ def self_test():
             window.handle_event({"ev": "start", "id": 7, "text": window.content(), "spans": []})
             assert not window.active, "A stale event restarted a stopped reading"
             root.update()
+            window.show_toolbar()
+            root.update()
+            assert window.selection_button.winfo_ismapped()
+            window.capture_id = 10
+            window.handle_event({"ev": "selection", "request": 10, "text": "Selected in my document."})
+            assert reader.calls[-1] == ("read", "Selected in my document.", "af_heart", 1.2)
+            assert window.content() == "Hello 😀. Read this sentence.", "Selection replaced editor text"
+            window.stop()
+            window.handle_event({"ev": "selection", "request": 10, "text": "Stale"})
+            assert reader.calls[-1] == ("STOP",)
+            window.show_reader()
+            root.update()
+            assert root.winfo_viewable()
         finally:
             window.close()
             runtime.CONF = previous
@@ -463,7 +572,12 @@ def self_test():
 
 def main():
     root = tk.Tk()
-    ReaderWindow(root)
+    root.withdraw()
+    window = ReaderWindow(root)
+    if sys.platform == "win32" or sys.platform.startswith("linux"):
+        window.show_toolbar()
+    else:
+        root.deiconify()
     root.mainloop()
     return 0
 

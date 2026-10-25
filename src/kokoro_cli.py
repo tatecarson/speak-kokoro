@@ -85,7 +85,7 @@ def main(argv=None):
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--gui-self-test", action="store_true", help=argparse.SUPPRESS)
     for flag, help_text in {
-        "gui": "Open the desktop reading window",
+        "gui": "Open the desktop selection toolbar",
         "stop": "Stop reading", "toggle": "Pause or resume; replay the last text if idle",
         "next": "Next sentence", "prev": "Previous sentence", "quit": "Unload the model",
         "voices": "List available voices" + ("" if runtime.BUNDLE else ", requires internet"), "doctor": "Check eSpeak and audio setup",
